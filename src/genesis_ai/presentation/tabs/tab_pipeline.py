@@ -3,7 +3,7 @@
 import streamlit as st
 
 from genesis_ai.config.dependencies import get_services
-from genesis_ai.core.models import PipelineConfig, PipelineResult, GeneratedContent
+from genesis_ai.core.models import GeneratedContent, PipelineConfig, PipelineResult
 from genesis_ai.presentation.components.log_viewer import render_inline_terminal
 from genesis_ai.presentation.state.session_manager import SessionManager
 from genesis_ai.presentation.utils.media import render_video
@@ -20,8 +20,8 @@ PIPELINE_LOG_KEY = "pipeline_execution_logs"
 
 
 def render_pipeline_tab() -> None:
-    """?뚯씠?꾨씪????""
-    st.markdown("### ?? ?먮룞???뚯씠?꾨씪??)
+    """Pipeline execution tab."""
+    st.markdown("### Pipeline Execution")
 
     product = SessionManager.get_selected_product()
     if not product:
@@ -34,10 +34,10 @@ def render_pipeline_tab() -> None:
     with st.expander("?숋툘 ?뚯씠?꾨씪???ㅼ젙", expanded=True):
         c1, c2 = st.columns(2)
         with c1:
-            youtube_count = st.slider("YouTube 寃????, 1, 10, 3)
+            youtube_count = st.slider("YouTube results", 1, 10, 3)
             include_comments = st.checkbox("?볤? 遺꾩꽍 ?ы븿", value=True)
         with c2:
-            naver_count = st.slider("?ㅼ씠踰??쇳븨 寃????, 5, 30, 10)
+            naver_count = st.slider("Naver news results", 5, 30, 10)
             generate_social = st.checkbox("SNS ?ъ뒪???앹꽦", value=True)
             generate_video = st.checkbox("鍮꾨뵒???앹꽦", value=True)
             generate_thumbnails = st.checkbox("?몃꽕??3醫??앹꽦", value=True)
@@ -147,7 +147,7 @@ def _execute_pipeline(
         if result.success:
             # ?꾨즺 濡쒓렇 異붽?
             pipeline_logs.append({
-                "emoji": "??,
+                "emoji": "OK",
                 "timestamp": datetime.now().strftime("%H:%M:%S"),
                 "level": "INFO",
                 "message": "?뚯씠?꾨씪???ㅽ뻾 ?꾨즺!",
@@ -184,7 +184,7 @@ def _execute_pipeline(
         else:
             # ?ㅽ뙣 濡쒓렇 異붽?
             pipeline_logs.append({
-                "emoji": "??,
+                "emoji": "ERR",
                 "timestamp": datetime.now().strftime("%H:%M:%S"),
                 "level": "ERROR",
                 "message": f"?ㅽ뻾 ?ㅽ뙣: {result.error_message}",
@@ -249,12 +249,12 @@ def _render_cached_results() -> None:
     import subprocess
 
     st.divider()
-    st.markdown("### ?럞 ?앹꽦 寃곌낵臾?)
+    st.markdown("### Generated Outputs")
 
     r_col1, r_col2 = st.columns(2)
 
     with r_col1:
-        st.markdown("#### ?뼹截??몃꽕??)
+        st.markdown("#### Thumbnail")
         multi_thumbnails = SessionManager.get(SessionManager.MULTI_THUMBNAILS)
         selected_index = st.session_state.get("pipeline_thumbnail_selected_index", 0)
 
@@ -285,7 +285,7 @@ def _render_cached_results() -> None:
             )
             if selected_bytes:
                 SessionManager.set(SessionManager.GENERATED_THUMBNAIL, selected_bytes)
-                st.markdown("##### ?좏깮???몃꽕??)
+                st.markdown("##### Selected Thumbnail")
                 st.image(
                     selected_bytes,
                     caption=selected_item.get("style_name", "Selected Thumbnail"),
@@ -299,7 +299,7 @@ def _render_cached_results() -> None:
             st.info("?앹꽦???몃꽕?쇱씠 ?놁뒿?덈떎.")
 
     with r_col2:
-        st.markdown("#### ?렗 鍮꾨뵒??)
+        st.markdown("#### Video")
         video_bytes = SessionManager.get(SessionManager.VIDEO_BYTES)
         video_url = SessionManager.get(SessionManager.GENERATED_VIDEO_URL)
 
@@ -332,19 +332,19 @@ def _render_cached_results() -> None:
 
 
 def render_pipeline_results(result, show_balloons: bool = False) -> None:
-    """?뚯씠?꾨씪???ㅽ뻾 寃곌낵 ?뚮뜑留?""
+    """Render pipeline execution results."""
     import os
     import platform
     import subprocess
 
     # ?몃꽕??鍮꾨뵒???몄뀡 ???諛?寃곌낵 ?쒖떆
     st.divider()
-    st.markdown("### ?럞 ?앹꽦 寃곌낵臾?)
+    st.markdown("### Generated Outputs")
 
     r_col1, r_col2 = st.columns(2)
 
     with r_col1:
-        st.markdown("#### ?뼹截??몃꽕??)
+        st.markdown("#### Thumbnail")
         selected_index = st.session_state.get("pipeline_thumbnail_selected_index", 0)
 
         if result.generated_content.multi_thumbnails:
@@ -402,7 +402,7 @@ def render_pipeline_results(result, show_balloons: bool = False) -> None:
             st.info("?앹꽦???몃꽕?쇱씠 ?놁뒿?덈떎.")
 
     with r_col2:
-        st.markdown("#### ?렗 鍮꾨뵒??)
+        st.markdown("#### Video")
         video_url = result.generated_content.video_url
         video_bytes = result.generated_content.video_bytes
         if video_bytes:
