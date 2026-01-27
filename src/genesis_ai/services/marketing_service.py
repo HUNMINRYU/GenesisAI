@@ -2,20 +2,24 @@
 마케팅 서비스
 AI 기반 마케팅 전략 생성 비즈니스 로직
 """
+
 from typing import Any, Callable, Optional
 
-from ..core.exceptions import StrategyGenerationError
-from ..core.models import MarketingStrategy
-from ..infrastructure.clients.gemini_client import GeminiClient
-from ..utils.logger import get_logger
-
-logger = get_logger(__name__)
+from genesis_ai.core.exceptions import StrategyGenerationError
+from genesis_ai.core.interfaces.ai_service import IMarketingAIService
+from genesis_ai.utils.logger import (
+    log_api_end,
+    log_api_start,
+    log_error,
+    log_step,
+    log_success,
+)
 
 
 class MarketingService:
     """마케팅 전략 생성 서비스"""
 
-    def __init__(self, client: GeminiClient) -> None:
+    def __init__(self, client: IMarketingAIService) -> None:
         self._client = client
 
     def analyze_data(
@@ -23,17 +27,24 @@ class MarketingService:
         youtube_data: dict,
         naver_data: dict,
         product_name: str,
+        top_insights: list[dict] = None,
         progress_callback: Optional[Callable[[str, int], None]] = None,
         use_grounding: bool = True,
     ) -> dict[str, Any]:
         """마케팅 데이터 분석"""
-        logger.info(f"마케팅 데이터 분석 시작: {product_name}")
+        log_step(
+            "마케팅 데이터 분석",
+            "시작",
+            f"제품: {product_name}, Grounding: {use_grounding}",
+        )
+        log_api_start("Gemini Analysis", f"Product: {product_name}")
 
         try:
             result = self._client.analyze_marketing_data(
                 youtube_data=youtube_data,
                 naver_data=naver_data,
                 product_name=product_name,
+                top_insights=top_insights,
                 progress_callback=progress_callback,
                 use_search_grounding=use_grounding,
             )
@@ -41,14 +52,18 @@ class MarketingService:
             if "error" in result:
                 raise StrategyGenerationError(result["error"])
 
-            logger.info("마케팅 데이터 분석 완료")
+            log_api_end("Gemini Analysis")
+            log_success("마케팅 데이터 분석 완료")
             return result
 
         except StrategyGenerationError:
             raise
         except Exception as e:
-            logger.error(f"마케팅 데이터 분석 실패: {e}")
-            raise StrategyGenerationError(f"마케팅 데이터 분석 실패: {e}")
+            log_error(f"마케팅 데이터 분석 실패: {e}")
+            raise StrategyGenerationError(
+                f"마케팅 데이터 분석 실패: {e}",
+                original_error=e,
+            )
 
     def generate_strategy(
         self,
@@ -56,7 +71,8 @@ class MarketingService:
         progress_callback: Optional[Callable[[str, int], None]] = None,
     ) -> dict[str, Any]:
         """마케팅 전략 생성"""
-        logger.info("마케팅 전략 생성 시작")
+        log_step("마케팅 전략 수립", "시작")
+        log_api_start("Gemini Strategy Generation")
 
         try:
             result = self._client.generate_marketing_strategy(
@@ -67,14 +83,18 @@ class MarketingService:
             if "error" in result:
                 raise StrategyGenerationError(result["error"])
 
-            logger.info("마케팅 전략 생성 완료")
+            log_api_end("Gemini Strategy Generation")
+            log_success("마케팅 전략 생성 완료")
             return result
 
         except StrategyGenerationError:
             raise
         except Exception as e:
-            logger.error(f"마케팅 전략 생성 실패: {e}")
-            raise StrategyGenerationError(f"마케팅 전략 생성 실패: {e}")
+            log_error(f"마케팅 전략 생성 실패: {e}")
+            raise StrategyGenerationError(
+                f"마케팅 전략 생성 실패: {e}",
+                original_error=e,
+            )
 
     def generate_hooks(
         self,

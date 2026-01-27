@@ -19,6 +19,14 @@ class ITextGenerationService(Protocol):
         """텍스트 생성"""
         ...
 
+    @abstractmethod
+    async def generate_content_async(
+        self,
+        prompt: str,
+    ) -> str:
+        """??? ??? ??"""
+        ...
+
 
 @runtime_checkable
 class IImageGenerationService(Protocol):
@@ -44,6 +52,7 @@ class IMarketingAIService(ITextGenerationService, IImageGenerationService, Proto
         youtube_data: dict,
         naver_data: dict,
         product_name: str,
+        top_insights: list[dict] = None,
         progress_callback: Optional[Callable[[str, int], None]] = None,
         use_search_grounding: bool = True,
     ) -> dict[str, Any]:
@@ -64,10 +73,11 @@ class IMarketingAIService(ITextGenerationService, IImageGenerationService, Proto
         self,
         product: dict,
         hook_text: str,
-        style: str = "드라마틱",
+        style: str = "????",
+        style_modifier: Optional[str] = None,
         progress_callback: Optional[Callable[[str, int], None]] = None,
     ) -> bytes | None:
-        """마케팅 썸네일 생성"""
+        """??? ??? ??"""
         ...
 
     @abstractmethod

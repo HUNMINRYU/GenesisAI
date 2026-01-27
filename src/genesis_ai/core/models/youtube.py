@@ -4,7 +4,7 @@ YouTube 관련 도메인 모델
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class YouTubeComment(BaseModel):
@@ -35,6 +35,8 @@ class GainPoint(BaseModel):
 class YouTubeVideo(BaseModel):
     """YouTube 비디오 모델"""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     video_id: str = Field(..., alias="id", description="비디오 ID")
     title: str = Field(..., description="제목")
     description: str = Field(default="", description="설명")
@@ -45,10 +47,6 @@ class YouTubeVideo(BaseModel):
     like_count: int = Field(default=0, ge=0, description="좋아요 수")
     comment_count: int = Field(default=0, ge=0, description="댓글 수")
     transcript: Optional[str] = Field(default=None, description="자막 텍스트")
-
-    class Config:
-        populate_by_name = True
-
 
 class YouTubeSearchResult(BaseModel):
     """YouTube 검색 결과 (분석 포함)"""

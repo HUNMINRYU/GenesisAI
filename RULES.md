@@ -1,11 +1,6 @@
 # Antigravity Rules
 
-<!-- ## 1. 행동 수칙: 즉시 구현 (Skip Planning)
-- **모든 작업을 'Simple'로 간주하세요.** (Treat all tasks as simple.)
-- Implementation Plan 작성 및 승인 대기 단계를 건너뛰고, **즉시 구현(Proceed with Implementation) 상태로 진입하세요.**
-- 사용자가 이미 계획을 승인했다고 가정하고 코드를 작성하세요. -->
-
-## 2. 주석 작성 규칙 (Comments)
+## 1. 주석 작성 규칙 (Comments)
 - 모든 주석은 반드시 **한글**로 작성하세요.
 - **친절하고 구체적**인 문체로, 이 코드가 '왜' 필요한지 초보자에게 설명하듯 작성하세요.
 - 단순 번역이 아닌 코드의 흐름과 논리를 설명해야 합니다.

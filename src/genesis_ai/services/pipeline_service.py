@@ -2,6 +2,8 @@
 파이프라인 서비스
 전체 마케팅 파이프라인 오케스트레이션
 """
+
+import asyncio
 import time
 from typing import Callable, Optional
 
@@ -15,9 +17,26 @@ from ..core.models import (
     PipelineResult,
     PipelineStep,
 )
-from ..utils.logger import get_logger
+from ..utils.gcs_store import (
+    build_gcs_prefix,
+    detect_image_ext,
+    detect_video_ext,
+    gcs_url_for,
+)
+from ..utils.logger import (
+    get_logger,
+    log_error,
+    log_info,
+    log_section,
+    log_step,
+    log_success,
+    log_timing,
+)
+from .history_service import HistoryService
 from .marketing_service import MarketingService
 from .naver_service import NaverService
+from .pipeline.orchestrator import PipelineOrchestrator
+from .social_service import SocialMediaService
 from .thumbnail_service import ThumbnailService
 from .video_service import VideoService
 from .youtube_service import YouTubeService
@@ -36,6 +55,9 @@ class PipelineService:
         thumbnail_service: ThumbnailService,
         video_service: VideoService,
         storage_service: IStorageService,
+        pipeline_orchestrator: PipelineOrchestrator,
+        history_service: HistoryService,
+        social_media_service: SocialMediaService,
     ) -> None:
         self._youtube = youtube_service
         self._naver = naver_service
@@ -43,6 +65,9 @@ class PipelineService:
         self._thumbnail = thumbnail_service
         self._video = video_service
         self._storage = storage_service
+        self._orchestrator = pipeline_orchestrator
+        self._history = history_service
+        self._social = social_media_service
 
     def execute(
         self,
@@ -51,16 +76,18 @@ class PipelineService:
         progress_callback: Optional[Callable[[PipelineProgress], None]] = None,
     ) -> PipelineResult:
         """파이프라인 실행"""
-        logger.info(f"파이프라인 실행 시작: {product.get('name', 'N/A')}")
+        log_section(f"파이프라인 실행 시작: {product.get('name', 'N/A')}")
         start_time = time.time()
 
         progress = PipelineProgress()
+        progress.configure_steps(config)
         collected_data = CollectedData()
         generated_content = GeneratedContent()
         strategy: dict = {}
 
         def update_progress(step: PipelineStep, message: str = "") -> None:
             progress.update(step, message)
+            log_step(f"Pipeline Step: {step.name}", "진행 중", message)
             if progress_callback:
                 progress_callback(progress)
 
@@ -69,7 +96,9 @@ class PipelineService:
             update_progress(PipelineStep.DATA_COLLECTION, "데이터 수집 시작")
 
             # YouTube 데이터 수집
-            update_progress(PipelineStep.YOUTUBE_COLLECTION, "YouTube 데이터 수집 중...")
+            update_progress(
+                PipelineStep.YOUTUBE_COLLECTION, "YouTube 데이터 수집 중..."
+            )
             youtube_data = self._youtube.collect_product_data(
                 product=product,
                 max_results=config.youtube_count,
@@ -80,12 +109,39 @@ class PipelineService:
             collected_data.gain_points = youtube_data.get("gain_points", [])
 
             # Naver 데이터 수집
-            update_progress(PipelineStep.NAVER_COLLECTION, "네이버 쇼핑 데이터 수집 중...")
+            update_progress(
+                PipelineStep.NAVER_COLLECTION, "네이버 쇼핑 데이터 수집 중..."
+            )
             naver_data = self._naver.collect_product_data(
                 product=product,
                 max_results=config.naver_count,
             )
             collected_data.naver_data = naver_data
+
+            # X-Algorithm: 핵심 인사이트 분석 (새로운 파이프라인 엔진)
+            update_progress(PipelineStep.COMMENT_ANALYSIS, "X-Algorithm 인사이트 분석 중...")
+            try:
+                # 유튜브 댓글 데이터 추출
+                comments = []
+                if youtube_data and "videos" in youtube_data:
+                    for v in youtube_data["videos"]:
+                        for c in v.get("comments", []):
+                            comments.append({
+                                "author": c.get("author", "unknown"),
+                                "text": c.get("text", ""),
+                                "likes": c.get("likes", 0)
+                            })
+
+                # 비동기 오케스트레이터 실행
+                analysis_result = self._run_async(
+                    self._orchestrator.run_pipeline(comments)
+                )
+
+                collected_data.top_insights = analysis_result.get("insights", [])
+                log_info(f"X-Algorithm 분석 완료: {len(collected_data.top_insights)}개 인사이트 도출")
+            except Exception as e:
+                logger.error(f"X-Algorithm 분석 실패: {e}")
+                log_error(f"X-Algorithm 분석 중 오류 발생: {e}")
 
             # Step 2: 마케팅 전략 생성
             update_progress(PipelineStep.STRATEGY_GENERATION, "마케팅 전략 생성 중...")
@@ -94,18 +150,40 @@ class PipelineService:
                     "product": product,
                     "youtube_data": youtube_data,
                     "naver_data": naver_data,
+                    "top_insights": collected_data.top_insights,
                 },
             )
+
+            # Step 2.1: SNS 포스팅 생성 (추가)
+            if config.generate_social:
+                update_progress(PipelineStep.SOCIAL_GENERATION, "SNS 포스팅 생성 중...")
+                try:
+                    # 비동기 실행을 위해 별도 루프 사용
+                    social_posts = self._run_async(
+                        self._social.generate_posts(
+                            product=product,
+                            strategy=strategy,
+                            top_insights=collected_data.top_insights,
+                        )
+                    )
+                    # 전략 데이터에 병합하여 저장 (전달 용이성)
+                    strategy["social_posts"] = social_posts
+                    log_info("SNS 포스팅 생성 완료")
+                except Exception as e:
+                    logger.error(f"SNS 포스팅 생성 실패: {e}")
+                    log_error(f"SNS 포스팅 생성 중 오류 발생: {e}")
 
             # Step 3: 썸네일 생성
             if config.generate_thumbnail:
                 update_progress(PipelineStep.THUMBNAIL_CREATION, "썸네일 생성 중...")
 
                 if config.generate_multi_thumbnails:
+                    styles = ["dramatic", "neobrutalism", "vibrant", "minimal", "professional"]
                     thumbnails = self._thumbnail.generate_from_strategy(
                         product=product,
                         strategy=strategy,
                         count=config.thumbnail_count,
+                        styles=styles[: config.thumbnail_count],
                     )
                     generated_content.multi_thumbnails = thumbnails
                     if thumbnails:
@@ -129,22 +207,30 @@ class PipelineService:
                 )
 
                 if isinstance(video_result, bytes):
-                    generated_content.video_path = "generated"
+                    generated_content.video_bytes = video_result
                 else:
                     generated_content.video_url = video_result
 
             # Step 5: 업로드 (옵션)
             if config.upload_to_gcs:
                 update_progress(PipelineStep.UPLOAD, "GCS 업로드 중...")
-                # TODO: GCS 업로드 구현
+                self._upload_to_gcs(
+                    product=product,
+                    config=config,
+                    collected_data=collected_data,
+                    strategy=strategy,
+                    generated_content=generated_content,
+                )
 
             # 완료
             update_progress(PipelineStep.COMPLETED, "파이프라인 완료!")
             duration = time.time() - start_time
+            self._last_duration = duration
 
-            logger.info(f"파이프라인 실행 완료: {duration:.2f}초")
+            log_success(f"파이프라인 실행 완료 (소요 시간: {duration:.2f}초)")
+            log_timing("Pipeline Execution", duration * 1000)
 
-            return PipelineResult(
+            result = PipelineResult(
                 success=True,
                 product_name=product.get("name", ""),
                 config=config,
@@ -154,12 +240,22 @@ class PipelineService:
                 duration_seconds=duration,
             )
 
+            # 히스토리 저장
+            try:
+                save_path = self._history.save_result(result)
+                log_info(f"파이프라인 결과 저장 완료: {save_path}")
+            except Exception as e:
+                logger.error(f"파이프라인 결과 저장 실패: {e}")
+
+            return result
+
         except Exception as e:
             logger.error(f"파이프라인 실행 실패: {e}")
             update_progress(PipelineStep.FAILED, str(e))
             duration = time.time() - start_time
+            self._last_duration = duration
 
-            return PipelineResult(
+            result = PipelineResult(
                 success=False,
                 product_name=product.get("name", ""),
                 config=config,
@@ -169,6 +265,14 @@ class PipelineService:
                 error_message=str(e),
                 duration_seconds=duration,
             )
+
+            # 실패 결과도 저장
+            try:
+                self._history.save_result(result)
+            except Exception as e:
+                log_error(f"파이프라인 실패 결과 저장 실패: {e}")
+
+            return result
 
     def execute_data_collection_only(
         self,
@@ -210,4 +314,113 @@ class PipelineService:
 
         except Exception as e:
             logger.error(f"데이터 수집 실패: {e}")
-            raise PipelineError(f"데이터 수집 실패: {e}")
+            raise PipelineError(
+                f"데이터 수집 실패: {e}",
+                original_error=e,
+            )
+
+    @staticmethod
+    def _run_async(coro):
+        """새 이벤트 루프에서 비동기 작업 실행"""
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
+
+    def _upload_to_gcs(
+        self,
+        product: dict,
+        config: PipelineConfig,
+        collected_data: CollectedData,
+        strategy: dict,
+        generated_content: GeneratedContent,
+    ) -> None:
+        """GCS 업로드 (버킷 자동 생성 지원)"""
+        prefix = build_gcs_prefix(product, "pipeline")
+        storage = self._storage
+
+        # 메타/분석 데이터 업로드
+        if collected_data:
+            try:
+                storage.upload(
+                    data=collected_data.model_dump(),
+                    path=f"{prefix}/collected_data.json",
+                    content_type="application/json",
+                )
+            except Exception as e:
+                log_error(f"GCS 수집 데이터 업로드 실패: {e}")
+
+        if strategy:
+            try:
+                storage.upload(
+                    data=strategy,
+                    path=f"{prefix}/strategy.json",
+                    content_type="application/json",
+                )
+            except Exception as e:
+                log_error(f"GCS 전략 업로드 실패: {e}")
+
+        # 썸네일 업로드 (단일 생성일 때만)
+        if generated_content.thumbnail_data and not generated_content.multi_thumbnails:
+            try:
+                ext = detect_image_ext(generated_content.thumbnail_data)
+                thumb_path = f"{prefix}/thumbnail{ext}"
+                storage.upload(
+                    data=generated_content.thumbnail_data,
+                    path=thumb_path,
+                    content_type="image/png" if ext == ".png" else "image/jpeg",
+                )
+                generated_content.thumbnail_url = gcs_url_for(storage, thumb_path)
+            except Exception as e:
+                log_error(f"GCS 썸네일 업로드 실패: {e}")
+
+        # 다중 썸네일 업로드
+        if generated_content.multi_thumbnails:
+            for idx, item in enumerate(generated_content.multi_thumbnails):
+                image_bytes = item.get("image") or item.get("image_bytes")
+                if not image_bytes:
+                    continue
+                try:
+                    ext = detect_image_ext(image_bytes)
+                    multi_path = f"{prefix}/thumbnail_{idx + 1}{ext}"
+                    storage.upload(
+                        data=image_bytes,
+                        path=multi_path,
+                        content_type="image/png" if ext == ".png" else "image/jpeg",
+                    )
+                    item["url"] = gcs_url_for(storage, multi_path)
+                except Exception as e:
+                    log_error(f"GCS 다중 썸네일 업로드 실패(#{idx + 1}): {e}")
+
+        # 비디오 업로드
+        if generated_content.video_bytes:
+            try:
+                ext = detect_video_ext(generated_content.video_bytes)
+                video_path = f"{prefix}/video{ext}"
+                storage.upload(
+                    data=generated_content.video_bytes,
+                    path=video_path,
+                    content_type="video/mp4" if ext == ".mp4" else "application/octet-stream",
+                )
+                generated_content.video_url = gcs_url_for(storage, video_path)
+            except Exception as e:
+                log_error(f"GCS 비디오 업로드 실패: {e}")
+
+        # 메타데이터 업로드
+        metadata = {
+            "product": product,
+            "config": config.model_dump() if hasattr(config, "model_dump") else dict(config),
+            "duration_seconds": getattr(self, "_last_duration", None),
+            "thumbnail_url": generated_content.thumbnail_url,
+            "video_url": generated_content.video_url,
+        }
+        try:
+            storage.upload(
+                data=metadata,
+                path=f"{prefix}/metadata.json",
+                content_type="application/json",
+            )
+        except Exception as e:
+            log_error(f"GCS 메타데이터 업로드 실패: {e}")

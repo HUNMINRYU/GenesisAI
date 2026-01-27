@@ -1,0 +1,32 @@
+
+============================================================
+실행 시간: 2026-01-24T10:24:13.187862
+결과: 3/4 통과
+  [FAIL] 스모크 테스트
+    원인: Traceback (most recent call last):
+  File "C:\Users\HM\Desktop\구글\work_vibe\app_v3_refactored\tests\test_smoke.py", line 126, in <module>
+    success = run_all_tests()
+  File "C:\Users\HM\Desktop\구글\w
+  [PASS] 설정 로드
+  [PASS] 캐시 모듈
+  [PASS] 예외 모듈
+
+============================================================
+실행 시간: 2026-01-27T09:53:03.987397
+결과: 3/4 통과
+  [FAIL] 스모크 테스트
+    원인: Traceback (most recent call last):
+  File "C:\Users\HM\Desktop\구글\work_vibe\app_v3_refactored\tests\test_smoke.py", line 113, in <module>
+    success = run_all_tests()
+  File "C:\Users\HM\Desktop\구글\w
+  [PASS] 설정 로드
+  [PASS] 캐시 모듈
+  [PASS] 예외 모듈
+
+============================================================
+실행 시간: 2026-01-27T09:53:52.452883
+결과: 4/4 통과
+  [PASS] 스모크 테스트
+  [PASS] 설정 로드
+  [PASS] 캐시 모듈
+  [PASS] 예외 모듈

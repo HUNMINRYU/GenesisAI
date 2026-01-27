@@ -51,6 +51,26 @@ class IYouTubeClient(ISearchClient, Protocol):
         """비디오 자막 조회"""
         ...
 
+    @abstractmethod
+    def collect_video_data(
+        self,
+        product: dict,
+        max_results: int = 5,
+        include_comments: bool = True,
+    ) -> dict:
+        """제품 기반 YouTube 데이터 수집"""
+        ...
+
+    @abstractmethod
+    def extract_pain_points(self, comments: list[dict]) -> list[dict]:
+        """댓글에서 페인포인트 추출"""
+        ...
+
+    @abstractmethod
+    def extract_gain_points(self, comments: list[dict]) -> list[dict]:
+        """댓글에서 게인포인트 추출"""
+        ...
+
 
 @runtime_checkable
 class INaverClient(ISearchClient, Protocol):

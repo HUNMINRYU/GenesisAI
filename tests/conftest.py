@@ -10,6 +10,16 @@ import pytest
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from genesis_ai.config.dependencies import ServiceContainer  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def reset_service_container():
+    """각 테스트마다 ServiceContainer 초기화"""
+    ServiceContainer.set_instance(None)
+    yield
+    ServiceContainer.set_instance(None)
+
 
 @pytest.fixture
 def sample_product():
