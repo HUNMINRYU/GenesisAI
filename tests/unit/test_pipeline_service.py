@@ -1,4 +1,3 @@
-
 from genesis_ai.core.models import PipelineConfig, UploadStatus
 from genesis_ai.services.pipeline_service import PipelineService
 
@@ -60,7 +59,7 @@ class _DummyVideoService:
     def __init__(self) -> None:
         self.calls = 0
 
-    def generate_marketing_video(self, product, strategy, duration_seconds):
+    def generate_marketing_video(self, product, strategy, duration_seconds, **kwargs):
         self.calls += 1
         return b"0000ftypvideo-bytes"
 
