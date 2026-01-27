@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional
 from ..core.models.pipeline import (
     PipelineResult,
 )
-from ..utils.file_store import ensure_output_dir
+from ..utils.file_store import ensure_output_dir, safe_unlink
 from ..utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -86,8 +86,7 @@ class HistoryService:
             file_path = meta_dir / f"{history_id}.json"
 
             if file_path.exists():
-                file_path.unlink()
-                return True
+                return safe_unlink(file_path)
             return False
         except Exception as e:
             logger.error(f"히스토리 삭제 실패 ({history_id}): {e}")
