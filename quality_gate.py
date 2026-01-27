@@ -48,7 +48,6 @@ def main():
     print(f"[TIME] 실행 시간: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     project_root = Path(__file__).parent
-    src_path = project_root / "src"
 
     # 품질 검증 단계
     gates = [

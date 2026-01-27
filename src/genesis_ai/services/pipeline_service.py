@@ -91,14 +91,14 @@ class PipelineService:
         upload_enabled = config.upload_to_gcs
 
         if upload_enabled and not self._storage.health_check():
-            log_warning("GCS ?? ?? - ???? ?????.")
+            log_warning("GCS health check failed - skipping upload.")
             upload_status = UploadStatus.FAILED
             upload_errors.append("GCS health check failed")
             upload_enabled = False
 
         def update_progress(step: PipelineStep, message: str = "") -> None:
             progress.update(step, message)
-            log_step(f"Pipeline Step: {step.name}", "?? ?", message)
+            log_step(f"Pipeline Step: {step.name}", "in progress", message)
             if progress_callback:
                 progress_callback(progress)
 
@@ -222,9 +222,9 @@ class PipelineService:
                 else:
                     generated_content.video_url = video_result
 
-            # Step 5: ??? (??)
+            # Step 5: Upload (optional)
             if upload_enabled:
-                update_progress(PipelineStep.UPLOAD, "GCS ??? ?...")
+                update_progress(PipelineStep.UPLOAD, "Uploading to GCS...")
                 upload_status, upload_errors = self._upload_to_gcs(
                     product=product,
                     config=config,
