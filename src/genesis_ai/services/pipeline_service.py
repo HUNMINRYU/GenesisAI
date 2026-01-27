@@ -211,10 +211,27 @@ class PipelineService:
             # Step 4: 비디오 생성
             if config.generate_video:
                 update_progress(PipelineStep.VIDEO_GENERATION, "비디오 생성 중...")
+                video_mode = "single"
+                phase2_prompt = None
+                enable_dual_phase_beta = False
+
+                if config.video_dual_phase_beta:
+                    video_mode = "dual"
+                    enable_dual_phase_beta = True
+                    category = product.get("category", "product")
+                    phase2_prompt = (
+                        "Freeze frame hero shot of a premium "
+                        f"{category} on a clean studio background. "
+                        "Soft light leaks, slow zoom in, subtle CTA text."
+                    )
+
                 video_result = self._video.generate_marketing_video(
                     product=product,
                     strategy=strategy,
                     duration_seconds=config.video_duration,
+                    mode=video_mode,
+                    phase2_prompt=phase2_prompt,
+                    enable_dual_phase_beta=enable_dual_phase_beta,
                 )
 
                 if isinstance(video_result, bytes):

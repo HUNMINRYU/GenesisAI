@@ -50,6 +50,9 @@ class PipelineConfig(BaseModel):
     thumbnail_count: int = Field(default=3, ge=1, le=5, description="생성할 썸네일 수")
     generate_video: bool = Field(default=True, description="비디오 생성 여부")
     video_duration: int = Field(default=8, ge=5, le=30, description="비디오 길이(초)")
+    video_dual_phase_beta: bool = Field(
+        default=False, description="Dual phase 비디오 생성 베타 플래그"
+    )
 
     # AI 설정
     use_search_grounding: bool = Field(default=True, description="검색 그라운딩 사용 여부")

@@ -40,6 +40,11 @@ def render_pipeline_tab() -> None:
             naver_count = st.slider("Naver news results", 5, 30, 10)
             generate_social = st.checkbox("SNS ?ъ뒪???앹꽦", value=True)
             generate_video = st.checkbox("鍮꾨뵒???앹꽦", value=True)
+            enable_dual_phase = st.checkbox(
+                "Dual Phase (beta)",
+                value=False,
+                help="8초 기본 영상 이후 2단계 연장 시도. 실패 시 1단계 결과로 폴백합니다.",
+            )
             generate_thumbnails = st.checkbox("?몃꽕??3醫??앹꽦", value=True)
 
     if st.button("?? ?뚯씠?꾨씪???ㅽ뻾", width="stretch", type="primary"):
@@ -60,6 +65,7 @@ def render_pipeline_tab() -> None:
             include_comments=include_comments,
             generate_social=generate_social,
             generate_video=generate_video,
+            enable_dual_phase=enable_dual_phase,
             generate_thumbnails=generate_thumbnails,
         )
 
@@ -75,6 +81,7 @@ def _execute_pipeline(
     include_comments: bool,
     generate_social: bool,
     generate_video: bool,
+    enable_dual_phase: bool,
     generate_thumbnails: bool,
 ) -> None:
     """?뚯씠?꾨씪???ㅽ뻾 濡쒖쭅"""
@@ -100,6 +107,7 @@ def _execute_pipeline(
             include_comments=include_comments,
             generate_social=generate_social,
             generate_video=generate_video,
+            video_dual_phase_beta=enable_dual_phase,
             generate_thumbnail=generate_thumbnails,
             generate_multi_thumbnails=generate_thumbnails,
             thumbnail_count=3 if generate_thumbnails else 1,

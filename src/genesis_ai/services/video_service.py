@@ -281,6 +281,9 @@ class VideoService:
         product: dict,
         strategy: dict,
         duration_seconds: int = 8,
+        mode: str = "single",
+        phase2_prompt: Optional[str] = None,
+        enable_dual_phase_beta: bool = False,
         progress_callback: Optional[Callable[[str, int], None]] = None,
     ) -> bytes | str:
         """마케팅 비디오 생성"""
@@ -305,6 +308,9 @@ class VideoService:
         return self.generate(
             prompt=prompt,
             duration_seconds=duration_seconds,
+            mode=mode,
+            phase2_prompt=phase2_prompt,
+            enable_dual_phase_beta=enable_dual_phase_beta,
             progress_callback=progress_callback,
         )
 
