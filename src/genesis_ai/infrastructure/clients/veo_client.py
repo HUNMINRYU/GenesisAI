@@ -3,6 +3,7 @@ Veo 비디오 생성 클라이언트
 Vertex AI Veo 3.1 기반 마케팅 비디오 생성
 """
 
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -410,6 +411,26 @@ class VeoClient:
             )
         return self._client
 
+    def _pre_flight_safety_check(self, prompt: str) -> None:
+        """Basic safety scan before sending prompt to Veo."""
+        if not prompt:
+            return
+
+        blocked_terms = [
+            "nsfw",
+            "nude",
+            "porn",
+            "sex",
+            "sexual",
+            "gore",
+            "blood",
+            "hate",
+            "violent",
+            "violence",
+        ]
+        pattern = r"\b(" + "|".join(map(re.escape, blocked_terms)) + r")\b"
+        if re.search(pattern, prompt, flags=re.IGNORECASE):
+            raise VeoAPIError("Unsafe prompt content detected. Please revise.")
     def generate_video(
         self,
         prompt: str,
@@ -425,6 +446,7 @@ class VeoClient:
         start_time = time.time()
 
         try:
+            self._pre_flight_safety_check(prompt)
             from google.genai.types import GenerateVideosConfig
 
             client = self._get_client()
@@ -476,6 +498,7 @@ class VeoClient:
         start_time = time.time()
 
         try:
+            self._pre_flight_safety_check(prompt)
             from google.genai.types import GenerateVideosConfig
 
             client = self._get_client()
@@ -532,6 +555,46 @@ class VeoClient:
             log_error(f"이미지 기반 비디오 생성 실패: {e}")
             raise VeoAPIError(f"이미지 기반 비디오 생성 실패: {e}")
 
+    def generate_video_with_fallback(
+        self,
+        phase1_prompt: str,
+        phase2_prompt: str,
+        duration_seconds: int = 8,
+        resolution: str = "1080p",
+        progress_callback: Optional[Callable[[str, int], None]] = None,
+        phase2_image_bytes: Optional[bytes] = None,
+    ) -> bytes | str:
+        """Generate dual-phase video and fall back to phase1 on failure."""
+        self._pre_flight_safety_check(phase1_prompt)
+        self._pre_flight_safety_check(phase2_prompt)
+
+        phase1_result = self.generate_video(
+            prompt=phase1_prompt,
+            duration_seconds=duration_seconds,
+            resolution=resolution,
+            progress_callback=progress_callback,
+        )
+
+        try:
+            if phase2_image_bytes is not None:
+                phase2_result = self.generate_video_from_image(
+                    image_bytes=phase2_image_bytes,
+                    prompt=phase2_prompt,
+                    duration_seconds=duration_seconds,
+                    progress_callback=progress_callback,
+                )
+            else:
+                phase2_result = self.generate_video(
+                    prompt=phase2_prompt,
+                    duration_seconds=duration_seconds,
+                    resolution=resolution,
+                    progress_callback=progress_callback,
+                )
+
+            return phase2_result or phase1_result
+        except Exception as e:
+            log_error(f"Phase 2 generation failed, falling back to phase 1: {e}")
+            return phase1_result
     def generate_multimodal_prompt(
         self,
         system_instruction: str,
