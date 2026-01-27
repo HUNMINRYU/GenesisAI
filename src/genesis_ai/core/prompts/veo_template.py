@@ -2,7 +2,6 @@
 Google Veo 3.1 Prompt Templates & Protocols
 """
 
-
 # System Instructions for Gemini to act as Prompt Engineer
 VEO_SYSTEM_PROMPT = """
 ### 🤖 Role & Persona

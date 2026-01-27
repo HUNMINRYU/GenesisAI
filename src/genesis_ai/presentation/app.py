@@ -220,43 +220,7 @@ def render_sidebar() -> None:
             st.rerun()
         st.caption("변경 후 적용 버튼을 눌러주세요.")
 
-        with st.expander("⚙️ 고급 저장 설정", expanded=False):
-            try:
-                from pathlib import Path
 
-                backups = sorted(Path(".").glob(".env.backup.*"), reverse=True)
-                if backups:
-                    backup_names = [b.name for b in backups]
-                    selected_backup = st.selectbox(
-                        "백업 선택",
-                        options=backup_names,
-                        help="선택한 백업으로 .env를 복구합니다.",
-                    )
-                    if st.button("♻️ 백업 복구", width="stretch"):
-                        try:
-                            Path(selected_backup).replace(".env")
-                            st.success(f"백업 복구 완료: {selected_backup}")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"백업 복구 실패: {e}")
-
-                    if st.button("🧹 오래된 백업 정리", width="stretch"):
-                        try:
-                            to_remove = backups[10:]
-                            for b in to_remove:
-                                b.unlink(missing_ok=True)
-                            st.success("오래된 백업 정리 완료 (최근 10개 유지)")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"백업 정리 실패: {e}")
-            except Exception as e:
-                log_error(f"고급 저장 설정 로드 실패: {e}")
-
-            history = st.session_state.get("output_dir_history", [])
-            if history:
-                st.markdown("**변경 기록**")
-                for item in history[::-1]:
-                    st.caption(f"{item['ts']} → `{item['path']}`")
 
         with st.expander("☁️ 클라우드 저장 (GCS)", expanded=False):
             current_bucket = get_settings().gcp.gcs_bucket_name or "(미설정)"
