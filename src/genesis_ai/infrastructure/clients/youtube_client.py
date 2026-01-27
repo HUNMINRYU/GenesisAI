@@ -187,6 +187,7 @@ class YouTubeClient:
                             "thumbnail": v.get("thumbnail", ""),
                             "channel": v.get("channel", ""),
                             "comments_count": len(comments),
+                            "comments": comments,
                         }
                     )
             except YouTubeAPIError:
