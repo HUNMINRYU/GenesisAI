@@ -23,6 +23,7 @@ from .pipeline import (
     PipelineProgress,
     PipelineResult,
     PipelineStep,
+    UploadStatus,
 )
 from .product import (
     Product,
@@ -67,4 +68,5 @@ __all__ = [
     "PipelineResult",
     "CollectedData",
     "GeneratedContent",
+    "UploadStatus",
 ]

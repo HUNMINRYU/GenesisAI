@@ -1,5 +1,5 @@
 
-from genesis_ai.core.models import PipelineConfig
+from genesis_ai.core.models import PipelineConfig, UploadStatus
 from genesis_ai.services.pipeline_service import PipelineService
 
 
@@ -83,7 +83,7 @@ class _DummyHistoryService:
 
 
 class _DummySocialService:
-    async def generate_posts(self, product, strategy):
+    async def generate_posts(self, product, strategy, top_insights=None):
         return [{"platform": "instagram", "content": "post"}]
 
 
@@ -94,6 +94,9 @@ class _DummyStorage:
 
     def ensure_bucket(self) -> None:
         return None
+
+    def health_check(self) -> bool:
+        return True
 
     def upload(self, data, path, content_type="application/json"):
         self.uploads.append({"path": path, "content_type": content_type, "data": data})
@@ -143,6 +146,7 @@ def test_pipeline_execute_success_with_uploads():
     result = service.execute(product={"name": "TestProduct"}, config=config)
 
     assert result.success is True
+    assert result.upload_status is UploadStatus.SUCCESS
     assert result.generated_content is not None
     assert len(result.generated_content.multi_thumbnails) == 3
     assert result.generated_content.thumbnail_data is not None
@@ -198,6 +202,7 @@ def test_pipeline_execute_skips_optional_steps():
     result = service.execute(product={"name": "TestProduct"}, config=config)
 
     assert result.success is True
+    assert result.upload_status is UploadStatus.SKIPPED
     assert youtube.calls == 1
     assert naver.calls == 1
     assert marketing.calls == 1
@@ -227,4 +232,60 @@ def test_pipeline_execute_handles_error():
     )
 
     assert result.success is False
+    assert result.upload_status in {UploadStatus.SKIPPED, UploadStatus.FAILED}
     assert "boom" in (result.error_message or "")
+
+
+def test_pipeline_execute_marks_upload_failed_on_health_check():
+    class _FailingStorage(_DummyStorage):
+        def health_check(self) -> bool:
+            return False
+
+    service = PipelineService(
+        youtube_service=_DummyYouTubeService(),
+        naver_service=_DummyNaverService(),
+        marketing_service=_DummyMarketingService(),
+        thumbnail_service=_DummyThumbnailService(),
+        video_service=_DummyVideoService(),
+        storage_service=_FailingStorage(),
+        pipeline_orchestrator=_DummyPipelineOrchestrator(),
+        history_service=_DummyHistoryService(),
+        social_media_service=_DummySocialService(),
+    )
+
+    config = PipelineConfig(generate_social=False, upload_to_gcs=True)
+
+    result = service.execute(product={"name": "TestProduct"}, config=config)
+
+    assert result.success is True
+    assert result.upload_status is UploadStatus.FAILED
+    assert result.upload_errors
+
+
+def test_pipeline_execute_marks_partial_uploads():
+    class _FailingStorage(_DummyStorage):
+        def upload(self, data, path, content_type="application/json"):
+            if path.endswith("/strategy.json"):
+                raise RuntimeError("boom")
+            return super().upload(data, path, content_type)
+
+    service = PipelineService(
+        youtube_service=_DummyYouTubeService(),
+        naver_service=_DummyNaverService(),
+        marketing_service=_DummyMarketingService(),
+        thumbnail_service=_DummyThumbnailService(),
+        video_service=_DummyVideoService(),
+        storage_service=_FailingStorage(),
+        pipeline_orchestrator=_DummyPipelineOrchestrator(),
+        history_service=_DummyHistoryService(),
+        social_media_service=_DummySocialService(),
+    )
+
+    result = service.execute(
+        product={"name": "TestProduct"},
+        config=PipelineConfig(generate_social=False, upload_to_gcs=True),
+    )
+
+    assert result.success is True
+    assert result.upload_status is UploadStatus.PARTIAL
+    assert any("strategy.json" in err for err in result.upload_errors)

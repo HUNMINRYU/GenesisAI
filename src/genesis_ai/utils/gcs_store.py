@@ -4,12 +4,14 @@ GCS 업로드 헬퍼
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timezone
 
 
 def build_gcs_prefix(product: dict, kind: str) -> str:
     name = product.get("name", "product")
-    safe = "".join(ch if ch.isalnum() else "-" for ch in name).strip("-").lower()
+    safe = re.sub(r"[^a-z0-9]+", "-", str(name).lower()).strip("-")
+    safe = safe[:50] if safe else "unknown"
     ts = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     return f"genesis-korea/{kind}/{safe}/{ts}"
 

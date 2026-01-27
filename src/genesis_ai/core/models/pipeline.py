@@ -25,6 +25,15 @@ class PipelineStep(str, Enum):
     FAILED = "failed"
 
 
+class UploadStatus(str, Enum):
+    """GCS upload status"""
+
+    SUCCESS = "success"
+    PARTIAL = "partial"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
 class PipelineConfig(BaseModel):
     """파이프라인 실행 설정"""
 
@@ -186,13 +195,21 @@ class PipelineResult(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    success: bool = Field(..., description="성공 여부")
-    product_name: str = Field(..., description="제품명")
-    config: Optional[PipelineConfig] = Field(default=None, description="실행 설정")
-    collected_data: Optional[CollectedData] = Field(default=None, description="수집된 데이터")
-    strategy: Optional[dict[str, Any]] = Field(default=None, description="마케팅 전략")
-    generated_content: Optional[GeneratedContent] = Field(default=None, description="생성된 콘텐츠")
-    error_message: Optional[str] = Field(default=None, description="에러 메시지")
+    success: bool = Field(..., description="success flag")
+    product_name: str = Field(..., description="product name")
+    config: Optional[PipelineConfig] = Field(default=None, description="pipeline config")
+    collected_data: Optional[CollectedData] = Field(default=None, description="collected data")
+    strategy: Optional[dict[str, Any]] = Field(default=None, description="strategy")
+    generated_content: Optional[GeneratedContent] = Field(default=None, description="generated content")
+    error_message: Optional[str] = Field(default=None, description="error message")
+    upload_status: UploadStatus = Field(
+        default=UploadStatus.SKIPPED,
+        description="GCS upload status",
+    )
+    upload_errors: list[str] = Field(
+        default_factory=list,
+        description="Upload failure details",
+    )
     executed_at: datetime = Field(default_factory=datetime.now, description="실행 시간")
     duration_seconds: float = Field(default=0.0, ge=0, description="실행 시간(초)")
 

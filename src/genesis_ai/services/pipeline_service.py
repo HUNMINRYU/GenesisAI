@@ -16,6 +16,7 @@ from ..core.models import (
     PipelineProgress,
     PipelineResult,
     PipelineStep,
+    UploadStatus,
 )
 from ..utils.gcs_store import (
     build_gcs_prefix,
@@ -31,6 +32,7 @@ from ..utils.logger import (
     log_step,
     log_success,
     log_timing,
+    log_warning,
 )
 from .history_service import HistoryService
 from .marketing_service import MarketingService
@@ -84,10 +86,19 @@ class PipelineService:
         collected_data = CollectedData()
         generated_content = GeneratedContent()
         strategy: dict = {}
+        upload_status = UploadStatus.SKIPPED
+        upload_errors: list[str] = []
+        upload_enabled = config.upload_to_gcs
+
+        if upload_enabled and not self._storage.health_check():
+            log_warning("GCS ?? ?? - ???? ?????.")
+            upload_status = UploadStatus.FAILED
+            upload_errors.append("GCS health check failed")
+            upload_enabled = False
 
         def update_progress(step: PipelineStep, message: str = "") -> None:
             progress.update(step, message)
-            log_step(f"Pipeline Step: {step.name}", "진행 중", message)
+            log_step(f"Pipeline Step: {step.name}", "?? ?", message)
             if progress_callback:
                 progress_callback(progress)
 
@@ -211,10 +222,10 @@ class PipelineService:
                 else:
                     generated_content.video_url = video_result
 
-            # Step 5: 업로드 (옵션)
-            if config.upload_to_gcs:
-                update_progress(PipelineStep.UPLOAD, "GCS 업로드 중...")
-                self._upload_to_gcs(
+            # Step 5: ??? (??)
+            if upload_enabled:
+                update_progress(PipelineStep.UPLOAD, "GCS ??? ?...")
+                upload_status, upload_errors = self._upload_to_gcs(
                     product=product,
                     config=config,
                     collected_data=collected_data,
@@ -237,6 +248,8 @@ class PipelineService:
                 collected_data=collected_data,
                 strategy=strategy,
                 generated_content=generated_content,
+                upload_status=upload_status,
+                upload_errors=upload_errors,
                 duration_seconds=duration,
             )
 
@@ -262,6 +275,8 @@ class PipelineService:
                 collected_data=collected_data,
                 strategy=strategy,
                 generated_content=generated_content,
+                upload_status=upload_status,
+                upload_errors=upload_errors,
                 error_message=str(e),
                 duration_seconds=duration,
             )
@@ -329,6 +344,7 @@ class PipelineService:
         finally:
             loop.close()
 
+
     def _upload_to_gcs(
         self,
         product: dict,
@@ -336,13 +352,15 @@ class PipelineService:
         collected_data: CollectedData,
         strategy: dict,
         generated_content: GeneratedContent,
-    ) -> None:
-        """GCS 업로드 (버킷 자동 생성 지원)"""
+    ) -> tuple[UploadStatus, list[str]]:
+        """GCS upload (auto bucket creation)."""
         prefix = build_gcs_prefix(product, "pipeline")
         storage = self._storage
+        errors: list[str] = []
+        total_uploads = 0
 
-        # 메타/분석 데이터 업로드
         if collected_data:
+            total_uploads += 1
             try:
                 storage.upload(
                     data=collected_data.model_dump(),
@@ -350,9 +368,11 @@ class PipelineService:
                     content_type="application/json",
                 )
             except Exception as e:
-                log_error(f"GCS 수집 데이터 업로드 실패: {e}")
+                log_error(f"GCS collected_data upload failed: {e}")
+                errors.append(f"collected_data.json: {e}")
 
         if strategy:
+            total_uploads += 1
             try:
                 storage.upload(
                     data=strategy,
@@ -360,10 +380,11 @@ class PipelineService:
                     content_type="application/json",
                 )
             except Exception as e:
-                log_error(f"GCS 전략 업로드 실패: {e}")
+                log_error(f"GCS strategy upload failed: {e}")
+                errors.append(f"strategy.json: {e}")
 
-        # 썸네일 업로드 (단일 생성일 때만)
         if generated_content.thumbnail_data and not generated_content.multi_thumbnails:
+            total_uploads += 1
             try:
                 ext = detect_image_ext(generated_content.thumbnail_data)
                 thumb_path = f"{prefix}/thumbnail{ext}"
@@ -374,14 +395,15 @@ class PipelineService:
                 )
                 generated_content.thumbnail_url = gcs_url_for(storage, thumb_path)
             except Exception as e:
-                log_error(f"GCS 썸네일 업로드 실패: {e}")
+                log_error(f"GCS thumbnail upload failed: {e}")
+                errors.append(f"thumbnail{ext}: {e}")
 
-        # 다중 썸네일 업로드
         if generated_content.multi_thumbnails:
             for idx, item in enumerate(generated_content.multi_thumbnails):
                 image_bytes = item.get("image") or item.get("image_bytes")
                 if not image_bytes:
                     continue
+                total_uploads += 1
                 try:
                     ext = detect_image_ext(image_bytes)
                     multi_path = f"{prefix}/thumbnail_{idx + 1}{ext}"
@@ -392,10 +414,11 @@ class PipelineService:
                     )
                     item["url"] = gcs_url_for(storage, multi_path)
                 except Exception as e:
-                    log_error(f"GCS 다중 썸네일 업로드 실패(#{idx + 1}): {e}")
+                    log_error(f"GCS thumbnail #{idx + 1} upload failed: {e}")
+                    errors.append(f"thumbnail_{idx + 1}{ext}: {e}")
 
-        # 비디오 업로드
         if generated_content.video_bytes:
+            total_uploads += 1
             try:
                 ext = detect_video_ext(generated_content.video_bytes)
                 video_path = f"{prefix}/video{ext}"
@@ -406,9 +429,9 @@ class PipelineService:
                 )
                 generated_content.video_url = gcs_url_for(storage, video_path)
             except Exception as e:
-                log_error(f"GCS 비디오 업로드 실패: {e}")
+                log_error(f"GCS video upload failed: {e}")
+                errors.append(f"video{ext}: {e}")
 
-        # 메타데이터 업로드
         metadata = {
             "product": product,
             "config": config.model_dump() if hasattr(config, "model_dump") else dict(config),
@@ -416,6 +439,7 @@ class PipelineService:
             "thumbnail_url": generated_content.thumbnail_url,
             "video_url": generated_content.video_url,
         }
+        total_uploads += 1
         try:
             storage.upload(
                 data=metadata,
@@ -423,4 +447,13 @@ class PipelineService:
                 content_type="application/json",
             )
         except Exception as e:
-            log_error(f"GCS 메타데이터 업로드 실패: {e}")
+            log_error(f"GCS metadata upload failed: {e}")
+            errors.append(f"metadata.json: {e}")
+
+        if total_uploads == 0:
+            return UploadStatus.SKIPPED, []
+        if not errors:
+            return UploadStatus.SUCCESS, []
+        if len(errors) < total_uploads:
+            return UploadStatus.PARTIAL, errors
+        return UploadStatus.FAILED, errors
