@@ -247,10 +247,10 @@ def render_video_tab() -> None:
 
     # 기존 수동 설정 UI (접어두기)
     with st.expander("🛠️ 수동 설정 모드 (기존 방식)", expanded=not selected_thumbnail):
-        render_manual_mode(product_dict, services)
+        render_manual_mode(product_dict, services, is_generating)
 
 
-def render_manual_mode(product_dict, services):
+def render_manual_mode(product_dict, services, is_generating):
     """기존 수동 설정 모드 UI"""
     # === 후킹 스타일 선택 섹션 ===
     st.markdown("#### 🎣 후킹 스타일 선택")
