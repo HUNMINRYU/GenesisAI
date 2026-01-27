@@ -48,6 +48,7 @@ def render_video_tab() -> None:
     )
 
     services = get_services()
+    is_generating = SessionManager.get(SessionManager.VIDEO_GENERATING, False)
 
     # === [New] 썸네일 기반 마케팅 영상 생성 (Vision-Narrative) ===
     st.markdown("#### 🖼️ 썸네일로 시작하기 (Vision-Narrative)")
@@ -147,7 +148,12 @@ def render_video_tab() -> None:
                 help="Gemini가 생성한 영문 프롬프트입니다. 필요하다면 수정하세요.",
             )
 
-            if st.button("🎬 이 프롬프트로 영상 생성", type="primary"):
+            if st.button(
+                "🎬 이 프롬프트로 영상 생성",
+                type="primary",
+                disabled=is_generating,
+            ):
+                SessionManager.set(SessionManager.VIDEO_GENERATING, True)
                 with PipelineLogger("Veo 3.1 비디오 생성") as logger:
                     logger.log("Prompt Length", f"{len(final_prompt)} chars")
                     try:
@@ -203,7 +209,10 @@ def render_video_tab() -> None:
                                     except Exception as e:
                                         st.warning(f"GCS 업로드 실패: {e}")
 
-                                    if st.button("💾 로컬로 저장 (비디오)", width="stretch"):
+                                    if st.button(
+                                        "💾 로컬로 저장 (비디오)",
+                                        width="stretch",
+                                    ):
                                         path = save_video_bytes(video_result)
                                         SessionManager.set(
                                             SessionManager.GENERATED_VIDEO_PATH, path
@@ -231,6 +240,8 @@ def render_video_tab() -> None:
                     except Exception as e:
                         # logger.log("Exception", str(e)) # PipelineLogger가 이미 출력할 수도 있음
                         st.error(handle_error(e, "영상 생성"))
+                    finally:
+                        SessionManager.set(SessionManager.VIDEO_GENERATING, False)
 
     st.divider()
 
@@ -386,8 +397,13 @@ def render_manual_mode(product_dict, services):
 
     # === 비디오 생성 ===
     if st.button(
-        "🎬 비디오 생성", width="stretch", type="primary", key="btn_gen_manual"
+        "🎬 비디오 생성",
+        width="stretch",
+        type="primary",
+        key="btn_gen_manual",
+        disabled=is_generating,
     ):
+        SessionManager.set(SessionManager.VIDEO_GENERATING, True)
         try:
             with st.spinner("AI가 숏폼 비디오를 생성합니다..."):
                 # AdvancedPromptBuilder 사용
@@ -484,3 +500,5 @@ def render_manual_mode(product_dict, services):
         except Exception as e:
             st.error(handle_error(e, "AI 비디오 생성"))
             st.caption("💡 비디오 길이를 줄이거나 잠시 후 다시 시도해보세요.")
+        finally:
+            SessionManager.set(SessionManager.VIDEO_GENERATING, False)
