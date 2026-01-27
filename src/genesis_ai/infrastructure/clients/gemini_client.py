@@ -30,6 +30,7 @@ class GeminiClient:
         self._text_model = text_model
         self._image_model = image_model
         self._client = None
+        self._async_client = None
 
     def _get_client(self):
         """Gemini 클라이언트 인스턴스 반환 (지연 초기화)"""
@@ -55,13 +56,47 @@ class GeminiClient:
         except Exception:
             return False
 
+    def _get_async_client(self):
+        """비동기 Gemini 클라이언트 인스턴스 반환"""
+        if self._async_client is None:
+            from google import genai
+
+            self._async_client = genai.Client(
+                vertexai=True,
+                project=self._project_id,
+                location=self._location,
+            )
+        return self._async_client
+
+    async def generate_content_async(
+        self,
+        prompt: str,
+        temperature: float = 0.7,
+    ) -> str:
+        """비동기 텍스트 생성"""
+        try:
+            from google.genai import types
+
+            client = self._get_async_client()
+            config = types.GenerateContentConfig(temperature=temperature)
+
+            response = await client.aio.models.generate_content(
+                model=self._text_model,
+                contents=prompt,
+                config=config,
+            )
+            return response.text
+        except Exception as e:
+            logger.error(f"비동기 텍스트 생성 실패: {e}")
+            return ""
+
     def generate_text(
         self,
         prompt: str,
         temperature: float = 0.7,
         use_grounding: bool = False,
     ) -> str:
-        """텍스트 생성"""
+        """텍스트 생성 (재시도 로직 적용)"""
         try:
             from google.genai import types
 
@@ -72,11 +107,15 @@ class GeminiClient:
             if use_grounding:
                 config.tools = [types.Tool(google_search=types.GoogleSearch())]
 
-            response = client.models.generate_content(
-                model=self._text_model,
-                contents=prompt,
-                config=config,
-            )
+            # [AI Product Pattern] Retry Mechanism
+            def _api_call():
+                return client.models.generate_content(
+                    model=self._text_model,
+                    contents=prompt,
+                    config=config,
+                )
+
+            response = self.retry_with_backoff(_api_call)
 
             return response.text
 
@@ -89,21 +128,25 @@ class GeminiClient:
         prompt: str,
         aspect_ratio: str = "16:9",
     ) -> bytes | None:
-        """이미지 생성 (genesis_kr/v3 방식: generate_content + response_modalities)"""
+        """이미지 생성 (Retry 적용) (genesis_kr/v3 방식: generate_content + response_modalities)"""
         try:
             import base64
+
             from google.genai.types import GenerateContentConfig, Modality
 
             client = self._get_client()
 
-            # v3와 동일: generate_content + response_modalities 사용
-            response = client.models.generate_content(
-                model=self._image_model,
-                contents=prompt,
-                config=GenerateContentConfig(
-                    response_modalities=[Modality.TEXT, Modality.IMAGE],
-                ),
-            )
+            # [AI Product Pattern] Retry Mechanism
+            def _api_call():
+                return client.models.generate_content(
+                    model=self._image_model,
+                    contents=prompt,
+                    config=GenerateContentConfig(
+                        response_modalities=[Modality.TEXT, Modality.IMAGE],
+                    ),
+                )
+
+            response = self.retry_with_backoff(_api_call)
 
             # 이미지가 포함된 응답 처리
             if response.candidates and response.candidates[0].content.parts:
@@ -126,10 +169,11 @@ class GeminiClient:
         youtube_data: dict,
         naver_data: dict,
         product_name: str,
+        top_insights: list[dict] = None,
         progress_callback: Optional[Callable[[str, int], None]] = None,
         use_search_grounding: bool = True,
     ) -> dict[str, Any]:
-        """마케팅 데이터 분석"""
+        """마케팅 데이터 분석 (Retry & Validation 강화)"""
         logger.info(f"마케팅 분석 시작: {product_name}")
 
         try:
@@ -146,10 +190,14 @@ class GeminiClient:
 ## 분석 대상 제품
 제품명: {product_name}
 
-## YouTube 데이터
+## X-Algorithm 핵심 인사이트 (유튜브 댓글 분석 결과)
+{json.dumps(top_insights, ensure_ascii=False, indent=2) if top_insights else "데이터 없음"}
+*참고: 위 인사이트는 AI가 실제 고객 반응에서 추출한 고가치 정보입니다. 전략 수립 시 최우선적으로 반영하세요.*
+
+## YouTube 데이터 (트렌드 및 경쟁 영상)
 {json.dumps(youtube_data, ensure_ascii=False, indent=2) if youtube_data else "데이터 없음"}
 
-## 네이버 쇼핑 데이터
+## 네이버 쇼핑 데이터 (시장 현황)
 {json.dumps(naver_data, ensure_ascii=False, indent=2) if naver_data else "데이터 없음"}
 
 ## 분석 요청
@@ -195,11 +243,15 @@ class GeminiClient:
             if use_search_grounding:
                 config.tools = [types.Tool(google_search=types.GoogleSearch())]
 
-            response = client.models.generate_content(
-                model=self._text_model,
-                contents=analysis_prompt,
-                config=config,
-            )
+            # [AI Product Pattern] Retry Mechanism
+            def _api_call():
+                return client.models.generate_content(
+                    model=self._text_model,
+                    contents=analysis_prompt,
+                    config=config,
+                )
+
+            response = self.retry_with_backoff(_api_call)
 
             if progress_callback:
                 progress_callback("분석 결과 처리 중...", 80)
@@ -230,11 +282,13 @@ class GeminiClient:
 
         youtube_data = collected_data.get("youtube_data", {})
         naver_data = collected_data.get("naver_data", {})
+        top_insights = collected_data.get("top_insights", [])
 
         return self.analyze_marketing_data(
             youtube_data=youtube_data,
             naver_data=naver_data,
             product_name=product_name,
+            top_insights=top_insights,
             progress_callback=progress_callback,
             use_search_grounding=True,
         )
@@ -246,12 +300,13 @@ class GeminiClient:
         style: str = "드라마틱",
         color_scheme: str = "블루 그라디언트",
         layout: str = "중앙 집중형",
+        style_modifier: Optional[str] = None,
     ) -> str:
         """마케팅 이미지 생성 프롬프트 빌드"""
         product_name = product.get("name", "제품")
         product_category = product.get("category", "일반")
 
-        return f"""
+        prompt = f"""
 Create a stunning marketing thumbnail image for e-commerce.
 
 PRODUCT: {product_name}
@@ -262,6 +317,11 @@ STYLE REQUIREMENTS:
 - Visual Style: {style} with high-end commercial quality
 - Color Scheme: {color_scheme}
 - Layout: {layout}
+"""
+        if style_modifier:
+            prompt += f"\n- Additional Modifier: {style_modifier}"
+
+        prompt += f"""
 
 COMPOSITION:
 - Professional product photography aesthetic
@@ -284,13 +344,15 @@ MOOD:
 - Premium, trustworthy, professional
 - Appeals to online shoppers
 - Creates urgency and desire
-""".strip()
+"""
+        return prompt.strip()
 
     def generate_thumbnail(
         self,
         product: dict,
         hook_text: str,
         style: str = "드라마틱",
+        style_modifier: Optional[str] = None,
         progress_callback: Optional[Callable[[str, int], None]] = None,
     ) -> bytes | None:
         """마케팅 썸네일 생성"""
@@ -300,7 +362,9 @@ MOOD:
             if progress_callback:
                 progress_callback("프롬프트 구성 중...", 10)
 
-            prompt = self._build_image_prompt(product, hook_text, style)
+            prompt = self._build_image_prompt(
+                product, hook_text, style, style_modifier=style_modifier
+            )
 
             if progress_callback:
                 progress_callback("이미지 생성 중...", 30)
@@ -412,10 +476,17 @@ MOOD:
         text: str,
         required_fields: list[str] | None = None,
     ) -> dict:
-        """LLM 출력 JSON 검증"""
+        """LLM 출력 JSON 검증 및 정화"""
+        # [AI Product Pattern] Output Sanitization
+        # 1. 마크다운 코드 블록 제거
+        text = re.sub(r"```json\s*", "", text)
+        text = re.sub(r"```\s*$", "", text)
+        text = text.strip()
+
         try:
             result = json.loads(text)
         except json.JSONDecodeError:
+            # 2. JSON 부분만 추출 시도
             json_match = re.search(r"\{[\s\S]*\}", text)
             if json_match:
                 try:

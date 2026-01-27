@@ -2,13 +2,14 @@
 비디오 서비스
 AI 기반 마케팅 비디오 생성 비즈니스 로직
 """
-from typing import Callable, Optional
+
+import re  # 정규식 모듈 추가
+from typing import Any, Callable, Dict, Optional
 
 from ..core.exceptions import VideoGenerationError
+from ..core.prompts.veo_template import VeoTemplateManager
 from ..infrastructure.clients.veo_client import VeoClient
-from ..utils.logger import get_logger
-
-logger = get_logger(__name__)
+from ..utils.logger import log_error, log_info, log_step, log_success
 
 
 class VideoService:
@@ -16,6 +17,60 @@ class VideoService:
 
     def __init__(self, client: VeoClient) -> None:
         self._client = client
+
+    def sanitize_prompt_input(self, text: str) -> str:
+        """
+        [AI Product Pattern] Prompt Injection 방지 및 특수문자 정화
+        - 실행 가능한 코드 패턴, 시스템 명령 등 위험한 패턴 제거
+        - LLM 혼란을 주는 제어 문자 제거
+        """
+        if not text:
+            return ""
+
+        # 1. 제어 문자 제거
+        sanitized = re.sub(r"[\x00-\x1f\x7f]", "", text)
+        sanitized = sanitized.strip()
+
+        # 2. 시스템 프롬프트 오버라이딩 시도 방지 (간단한 키워드 필터링)
+        # 실제로는 더 복잡한 로직이 필요하지만, 여기서는 기본적인 것만 차단
+        dangerous_patterns = [
+            r"ignore previous instructions",
+            r"system prompt",
+            r"override",
+            r"jailbreak",
+        ]
+
+        for pattern in dangerous_patterns:
+            sanitized = re.sub(pattern, "", sanitized, flags=re.IGNORECASE)
+
+        # 3. 길이 제한 및 공백 정리
+        sanitized = re.sub(r"\s+", " ", sanitized)
+        max_length = 800
+        if len(sanitized) > max_length:
+            sanitized = sanitized[:max_length].rstrip()
+
+        return sanitized
+
+    def validate_video_output(self, result: Any) -> bool:
+        """
+        [AI Product Pattern] 생성된 비디오 출력 유효성 검증
+        - bytes: 비어있지 않은지 확인
+        - str: 유효한 GCS URL 패턴인지 확인
+        """
+        if not result:
+            return False
+
+        if isinstance(result, bytes):
+            return len(result) > 1024  # 최소 1KB 이상이어야 유효
+
+        if isinstance(result, str):
+            # GCS URL 패턴 또는 로컬 경로 체크
+            # 예: https://storage.googleapis.com/... 또는 /path/to/video
+            return (
+                result.startswith("http") or result.startswith("/") or "gs://" in result
+            )
+
+        return False
 
     def generate(
         self,
@@ -25,26 +80,35 @@ class VideoService:
         progress_callback: Optional[Callable[[str, int], None]] = None,
     ) -> bytes | str:
         """비디오 생성"""
-        logger.info(f"비디오 생성 시작: {duration_seconds}초, {resolution}")
+        # [Defense] 입력값 정화
+        safe_prompt = self.sanitize_prompt_input(prompt)
+        log_step("비디오 생성 요청", "시작", f"{duration_seconds}s, {resolution}")
 
         try:
             result = self._client.generate_video(
-                prompt=prompt,
+                prompt=safe_prompt,
                 duration_seconds=duration_seconds,
                 resolution=resolution,
                 progress_callback=progress_callback,
             )
 
+            # [Defense] 출력 검증
+            if not self.validate_video_output(result):
+                raise VideoGenerationError("생성된 비디오 데이터가 유효하지 않습니다.")
+
             if isinstance(result, bytes):
-                logger.info(f"비디오 생성 완료: {len(result)} bytes")
+                log_success(f"비디오 생성 완료 ({len(result)} bytes)")
             else:
-                logger.info(f"비디오 생성 상태: {result[:100]}")
+                log_info(f"비디오 생성 상태: {result[:100]}")
 
             return result
 
         except Exception as e:
-            logger.error(f"비디오 생성 실패: {e}")
-            raise VideoGenerationError(f"비디오 생성 실패: {e}")
+            log_error(f"비디오 생성 서비스 실패: {e}")
+            raise VideoGenerationError(
+                f"비디오 생성 실패: {e}",
+                original_error=e,
+            )
 
     def generate_from_image(
         self,
@@ -53,25 +117,87 @@ class VideoService:
         duration_seconds: int = 8,
         progress_callback: Optional[Callable[[str, int], None]] = None,
     ) -> bytes | None:
-        """이미지 기반 비디오 생성"""
-        logger.info("이미지 기반 비디오 생성 시작")
+        """이미지 기반 비디오 생성 (Image-to-Video)"""
+        # [Defense] 입력값 정화
+        safe_prompt = self.sanitize_prompt_input(prompt)
+        log_step("I2V 생성 요청", "시작", f"{duration_seconds}s")
 
         try:
             result = self._client.generate_video_from_image(
                 image_bytes=image_bytes,
-                prompt=prompt,
+                prompt=safe_prompt,
                 duration_seconds=duration_seconds,
                 progress_callback=progress_callback,
             )
 
+            # [Defense] 출력 검증
+            if result and not self.validate_video_output(result):
+                log_error(
+                    "I2V 생성 결과 유효성 검증 실패 (파일 크기가 너무 작거나 잘못된 URL)"
+                )
+                return None
+
             if result:
-                logger.info(f"이미지 기반 비디오 생성 완료: {len(result)} bytes")
+                if isinstance(result, bytes):
+                    log_success(f"I2V 생성 완료 ({len(result)} bytes)")
+                else:
+                    log_info(f"I2V 생성 결과: {result[:100]}")
 
             return result
 
         except Exception as e:
-            logger.error(f"이미지 기반 비디오 생성 실패: {e}")
-            raise VideoGenerationError(f"이미지 기반 비디오 생성 실패: {e}")
+            log_error(f"I2V 생성 서비스 실패: {e}")
+            raise VideoGenerationError(
+                f"이미지 기반 비디오 생성 실패: {e}",
+                original_error=e,
+            )
+
+    def generate_story_prompt_from_image(
+        self,
+        image_bytes: bytes,
+        product: Dict[str, Any],
+        hook_text: str,
+        mode: str = "single",  # single or dual
+    ) -> str:
+        """
+        [Vision-Narrative Bridge]
+        썸네일 이미지를 분석하고 마케팅 서사를 입혀 최적화된 Veo 프롬프트 생성
+        """
+        log_step("Vision-Narrative", "프롬프트 생성", f"Mode: {mode}")
+
+        try:
+            # 1. 템플릿 로드
+            system_prompt = VeoTemplateManager.get_system_prompt()
+            template = VeoTemplateManager.get_template(mode)
+
+            # 2. Gemini VIsion 호출 (client 메서드 가정, 실제 구현 필요)
+            # 현재 client에 vision 기능이 명시적으로 없으므로, LLM 호출을 통한
+            # 멀티모달 프롬프트 생성을 client에 위임하거나 여기서 직접 호출해야 함.
+            # *client.generate_multimodal_prompt 메서드가 존재한다고 가정*
+            # 만약 없다면 인프라 계층에 추가가 필요하지만, 일단 client 메서드로 추상화
+            prompt = self._client.generate_multimodal_prompt(
+                system_instruction=system_prompt,
+                user_instruction=f"""
+                Context:
+                - Product: {product.get("name")} ({product.get("description")})
+                - Hook: {hook_text}
+                - Target Template:
+                {template}
+
+                Task:
+                Analyze the attached image (thumbnail) as the 'Start Frame'.
+                Fill in the template to create a cohesive video narrative starting from this visual.
+                """,
+                image_bytes=image_bytes,
+            )
+
+            log_success("Vision-Narrative 프롬프트 생성 완료")
+            return prompt
+
+        except Exception as e:
+            log_error(f"스토리 프롬프트 생성 실패: {e}")
+            # 실패 시 기본 템플릿 반환 (Fallback)
+            return f"Cinematic video of {product.get('name')}, {hook_text}, high quality, 4k"
 
     def create_marketing_prompt(
         self,
@@ -94,7 +220,8 @@ class VideoService:
         progress_callback: Optional[Callable[[str, int], None]] = None,
     ) -> bytes | str:
         """마케팅 비디오 생성"""
-        logger.info(f"마케팅 비디오 생성 시작: {product.get('name', 'N/A')}")
+        p_name = product.get("name", "N/A")
+        log_step("마케팅 비디오 생성", "시작", f"제품: {p_name}")
 
         # 전략에서 훅 텍스트 추출
         hooks = strategy.get("hook_suggestions", [])

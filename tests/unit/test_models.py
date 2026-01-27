@@ -4,14 +4,13 @@ Pydantic 모델 단위 테스트
 import pytest
 from pydantic import ValidationError
 
-from src.genesis_ai.core.models import (
-    Product,
-    ProductCategory,
+from genesis_ai.core.models import (
+    HookingPoint,
     PipelineConfig,
     PipelineProgress,
     PipelineStep,
-    HookingPoint,
-    MarketingStrategy,
+    Product,
+    ProductCategory,
 )
 
 
@@ -92,6 +91,8 @@ class TestPipelineProgress:
         progress = PipelineProgress()
         assert progress.current_step == PipelineStep.INITIALIZED
         assert progress.percentage == 0
+        assert progress.step_number == 0
+        assert progress.total_steps == len(PipelineProgress.STEP_ORDER)
 
     def test_update_progress(self):
         """진행 상황 업데이트"""
@@ -99,13 +100,34 @@ class TestPipelineProgress:
         progress.update(PipelineStep.DATA_COLLECTION, "데이터 수집 중")
         assert progress.current_step == PipelineStep.DATA_COLLECTION
         assert progress.message == "데이터 수집 중"
-        assert progress.percentage == 10
+        assert progress.step_number == 1
+        assert progress.percentage == progress._calculate_percentage(
+            PipelineStep.DATA_COLLECTION
+        )
 
     def test_completion_progress(self):
         """완료 진행률"""
         progress = PipelineProgress()
         progress.update(PipelineStep.COMPLETED, "완료")
         assert progress.percentage == 100
+
+    def test_dynamic_steps_from_config(self):
+        """설정 기반 단계 수/번호 계산"""
+        config = PipelineConfig(
+            generate_thumbnail=False,
+            generate_video=False,
+            upload_to_gcs=False,
+            generate_social=False,
+        )
+        progress = PipelineProgress()
+        progress.configure_steps(config)
+
+        assert progress.total_steps == 6
+        progress.update(PipelineStep.NAVER_COLLECTION, "네이버 수집")
+        assert progress.step_number == 3
+        assert progress.percentage == progress._calculate_percentage(
+            PipelineStep.NAVER_COLLECTION
+        )
 
 
 class TestHookingPoint:

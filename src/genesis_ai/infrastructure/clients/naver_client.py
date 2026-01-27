@@ -44,7 +44,7 @@ class NaverClient:
             "X-Naver-Client-Id": self._client_id,
             "X-Naver-Client-Secret": self._client_secret,
         }
-        params = {"query": query, "display": display}
+        params: dict[str, str | int] = {"query": query, "display": display}
 
         try:
             response = requests.get(

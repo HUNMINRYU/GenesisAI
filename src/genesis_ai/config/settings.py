@@ -23,7 +23,9 @@ class GCPSettings(BaseSettings):
     location: str = Field(
         default="us-central1", validation_alias="GOOGLE_CLOUD_LOCATION"
     )
-    gcs_bucket_name: str = Field(..., validation_alias="GCS_BUCKET_NAME")
+    gcs_bucket_name: Optional[str] = Field(
+        default=None, validation_alias="GCS_BUCKET_NAME"
+    )
     credentials_path: Optional[str] = Field(
         default=None, validation_alias="GOOGLE_APPLICATION_CREDENTIALS"
     )
@@ -61,6 +63,21 @@ class AIModelSettings(BaseSettings):
     )
 
 
+class NotionSettings(BaseSettings):
+    """Notion API 설정"""
+
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+    )
+
+    api_key: Optional[SecretStr] = Field(
+        default=None, validation_alias="NOTION_API_KEY"
+    )
+    database_id: Optional[str] = Field(
+        default=None, validation_alias="NOTION_DATABASE_ID"
+    )
+
+
 class AppSettings(BaseSettings):
     """애플리케이션 전체 설정"""
 
@@ -68,9 +85,10 @@ class AppSettings(BaseSettings):
         env_file=".env", env_file_encoding="utf-8", extra="ignore"
     )
 
-    app_name: str = "Genesis AI Studio"
+    app_name: str = "제네시스코리아 스튜디오"
     debug: bool = Field(default=False, validation_alias="DEBUG")
     log_level: str = Field(default="INFO", validation_alias="LOG_LEVEL")
+    output_dir: str = Field(default="outputs", validation_alias="OUTPUT_DIR")
 
 
 class Settings:
@@ -78,14 +96,42 @@ class Settings:
 
     def __init__(self) -> None:
         self.app = AppSettings()
-        self.gcp = GCPSettings()
-        self.naver = NaverSettings()
+        self.gcp = GCPSettings()  # type: ignore[call-arg]
+        self.naver = NaverSettings()  # type: ignore[call-arg]
+        self.notion = NotionSettings()
         self.models = AIModelSettings()
 
     @property
     def google_api_key(self) -> str:
         """Google API 키 반환 (YouTube, Gemini 공용)"""
         return self.gcp.google_api_key.get_secret_value()
+
+    @property
+    def notion_api_key(self) -> str:
+        """Notion API 키 반환"""
+        return self.notion.api_key.get_secret_value() if self.notion.api_key else ""
+
+    @property
+    def notion_database_id(self) -> str:
+        """Notion Database ID 반환"""
+        return self.notion.database_id or ""
+
+    def has_notion_api_key(self) -> bool:
+        """Notion API 키 설정 여부"""
+        return bool(self.notion.api_key and self.notion.api_key.get_secret_value())
+
+    def get_missing_required_settings(self) -> list[str]:
+        """필수 설정 누락 항목 반환"""
+        missing = []
+        if not self.gcp.project_id:
+            missing.append("GOOGLE_CLOUD_PROJECT_ID")
+        if not self.gcp.google_api_key.get_secret_value():
+            missing.append("GOOGLE_API_KEY")
+        if not self.naver.client_id.get_secret_value():
+            missing.append("NAVER_CLIENT_ID")
+        if not self.naver.client_secret.get_secret_value():
+            missing.append("NAVER_CLIENT_SECRET")
+        return missing
 
     def setup_environment(self) -> None:
         """GCP 환경변수 설정 (Vertex AI용)"""

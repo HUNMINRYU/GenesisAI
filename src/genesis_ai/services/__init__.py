@@ -2,6 +2,10 @@
 서비스 레이어 패키지
 비즈니스 로직 캡슐화
 """
+
+from .comment_analysis_service import CommentAnalysisService
+from .ctr_predictor import CTRPredictor
+from .hook_service import HookService
 from .marketing_service import MarketingService
 from .naver_service import NaverService
 from .pipeline_service import PipelineService
@@ -16,4 +20,7 @@ __all__ = [
     "ThumbnailService",
     "VideoService",
     "PipelineService",
+    "HookService",
+    "CommentAnalysisService",
+    "CTRPredictor",
 ]

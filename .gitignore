@@ -4,3 +4,9 @@ key.json
 .env
 __pycache__/
 *.pyc
+nul
+.claude/skills/
+.idea/
+nul
+.claude/skills/
+.idea/

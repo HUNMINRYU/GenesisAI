@@ -1,13 +1,18 @@
 """
 Google Cloud Storage 서비스
 """
+
 import json
+import re
+import uuid
+from datetime import datetime
 from typing import Any
 
+from google.api_core.exceptions import Forbidden, NotFound
 from google.cloud import storage
 
-from ...core.exceptions import GCSDownloadError, GCSUploadError, StorageError
-from ...utils.logger import get_logger
+from genesis_ai.core.exceptions import GCSDownloadError, GCSUploadError
+from genesis_ai.utils.logger import get_logger
 
 logger = get_logger(__name__)
 
@@ -15,9 +20,15 @@ logger = get_logger(__name__)
 class GCSStorage:
     """Google Cloud Storage 서비스"""
 
-    def __init__(self, bucket_name: str, project_id: str | None = None) -> None:
+    def __init__(
+        self,
+        bucket_name: str | None,
+        project_id: str | None = None,
+        location: str | None = None,
+    ) -> None:
         self._bucket_name = bucket_name
         self._project_id = project_id
+        self._location = location
         self._client = None
 
     def _get_client(self) -> storage.Client:
@@ -30,6 +41,35 @@ class GCSStorage:
         """버킷 인스턴스 반환"""
         return self._get_client().bucket(self._bucket_name)
 
+    def _generate_bucket_name(self) -> str:
+        base = self._project_id or "genesis-korea"
+        slug = re.sub(r"[^a-z0-9-]", "-", base.lower())
+        suffix = datetime.utcnow().strftime("%Y%m%d") + "-" + uuid.uuid4().hex[:6]
+        name = f"{slug}-genesis-korea-{suffix}"
+        return name[:63].strip("-")
+
+    def ensure_bucket(self) -> None:
+        """버킷 존재 확인 및 필요 시 생성"""
+        client = self._get_client()
+
+        if not self._bucket_name:
+            self._bucket_name = self._generate_bucket_name()
+
+        bucket = client.bucket(self._bucket_name)
+        try:
+            if not bucket.exists():
+                client.create_bucket(bucket, location=self._location)
+                logger.info(f"GCS 버킷 생성: {self._bucket_name}")
+        except Forbidden:
+            # Some service accounts lack buckets.get but can still upload objects.
+            logger.warning(
+                "GCS 버킷 존재 여부를 확인할 권한이 없습니다. "
+                "버킷이 이미 존재한다고 가정하고 업로드를 시도합니다."
+            )
+        except NotFound:
+            # Bucket truly missing and cannot be checked/created.
+            raise
+
     def is_configured(self) -> bool:
         """설정 확인"""
         return bool(self._bucket_name)
@@ -37,10 +77,14 @@ class GCSStorage:
     def health_check(self) -> bool:
         """연결 상태 확인"""
         try:
-            self._get_bucket().exists()
+            self.ensure_bucket()
             return True
         except Exception:
             return False
+
+    @property
+    def bucket_name(self) -> str | None:
+        return self._bucket_name
 
     def upload(
         self,
@@ -50,6 +94,9 @@ class GCSStorage:
     ) -> bool:
         """데이터 업로드"""
         try:
+            self.ensure_bucket()
+            if not path or not isinstance(path, str):
+                raise ValueError("업로드 경로가 유효하지 않습니다.")
             bucket = self._get_bucket()
             blob = bucket.blob(path)
 
@@ -70,7 +117,7 @@ class GCSStorage:
 
         except Exception as e:
             logger.error(f"GCS 업로드 실패: {e}")
-            raise GCSUploadError(f"GCS 업로드 실패: {e}", {"path": path})
+            raise GCSUploadError(f"GCS 업로드 실패: {e}", path=path)
 
     def download(self, path: str) -> bytes | None:
         """바이너리 데이터 다운로드"""
@@ -80,7 +127,7 @@ class GCSStorage:
             return blob.download_as_bytes()
         except Exception as e:
             logger.error(f"GCS 다운로드 실패: {e}")
-            raise GCSDownloadError(f"GCS 다운로드 실패: {e}", {"path": path})
+            raise GCSDownloadError(f"GCS 다운로드 실패: {e}", path=path)
 
     def download_text(self, path: str) -> str | None:
         """텍스트 데이터 다운로드"""

@@ -4,7 +4,17 @@
       "Bash(dir:*)",
       "Bash(find:*)",
       "Bash(xargs:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(ruff check:*)",
+      "Bash(pytest:*)",
+      "Bash(tree:*)",
+      "Bash(git worktree:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$\\(cat <<''EOF''\nfeat: Neobrutalism UI 및 품질 개선\n\n- 린트 오류 1,575개 자동 수정\n- 테스트 50개 통과\n- 품질 게이트 4/4 통과\n- Windows 인코딩 호환성 수정\n- X-Algorithm 파이프라인 구현\n- 서비스 레이어 리팩터링\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n\\)\")",
+      "Bash(git checkout:*)",
+      "Bash(git merge:*)",
+      "Bash(git stash:*)"
     ]
   }
 }

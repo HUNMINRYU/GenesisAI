@@ -4,7 +4,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, field_serializer
 
 
 class TargetPersona(BaseModel):
@@ -66,6 +66,8 @@ class ContentStrategy(BaseModel):
 class MarketingStrategy(BaseModel):
     """완전한 마케팅 전략 출력"""
 
+    model_config = ConfigDict()
+
     product_name: str = Field(..., description="제품명")
     target_persona: Optional[TargetPersona] = Field(default=None, description="타겟 페르소나")
     hooking_points: list[HookingPoint] = Field(default_factory=list, description="훅 포인트 목록")
@@ -78,5 +80,6 @@ class MarketingStrategy(BaseModel):
     summary: str = Field(default="", description="전체 분석 요약")
     generated_at: datetime = Field(default_factory=datetime.now, description="생성 시간")
 
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
+    @field_serializer("generated_at")
+    def serialize_generated_at(self, value: datetime) -> str:
+        return value.isoformat()

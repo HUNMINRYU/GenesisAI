@@ -4,7 +4,7 @@
 from enum import Enum
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProductCategory(str, Enum):
@@ -23,13 +23,12 @@ class ProductCategory(str, Enum):
 class Product(BaseModel):
     """제품 도메인 모델"""
 
+    model_config = ConfigDict(frozen=True)
+
     name: str = Field(..., min_length=1, description="제품명")
     category: ProductCategory = Field(..., description="제품 카테고리")
     description: str = Field(..., description="제품 설명")
     target: str = Field(..., description="대상 해충/문제")
-
-    class Config:
-        frozen = True  # 불변 객체
 
     def to_dict(self) -> dict:
         """딕셔너리로 변환"""

@@ -2,12 +2,28 @@
 스토리지 서비스 인터페이스 정의
 """
 from abc import abstractmethod
-from typing import Optional, Protocol, runtime_checkable
+from typing import Protocol, runtime_checkable
 
 
 @runtime_checkable
 class IStorageService(Protocol):
     """스토리지 서비스 프로토콜"""
+
+    @abstractmethod
+    def ensure_bucket(self) -> None:
+        """버킷 존재 확인 및 필요 시 생성"""
+        ...
+
+    @abstractmethod
+    def health_check(self) -> bool:
+        """???? ?? ?? ??"""
+        ...
+
+    @property
+    @abstractmethod
+    def bucket_name(self) -> str | None:
+        """?? ?? ??"""
+        ...
 
     @abstractmethod
     def upload(
