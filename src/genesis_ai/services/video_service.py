@@ -51,6 +51,27 @@ class VideoService:
 
         return sanitized
 
+    def _validate_prompt_safety(self, prompt: str) -> None:
+        """Basic safety scan before sending prompt to Veo."""
+        if not prompt:
+            return
+
+        blocked_terms = [
+            "nsfw",
+            "nude",
+            "porn",
+            "sex",
+            "sexual",
+            "gore",
+            "blood",
+            "hate",
+            "violent",
+            "violence",
+        ]
+        pattern = r"\b(" + "|".join(map(re.escape, blocked_terms)) + r")\b"
+        if re.search(pattern, prompt, flags=re.IGNORECASE):
+            raise VideoGenerationError("Unsafe prompt content detected. Please revise.")
+
     def validate_video_output(self, result: Any) -> bool:
         """
         [AI Product Pattern] 생성된 비디오 출력 유효성 검증
@@ -77,20 +98,62 @@ class VideoService:
         prompt: str,
         duration_seconds: int = 8,
         resolution: str = "720p",
+        mode: str = "single",
+        phase2_prompt: Optional[str] = None,
+        enable_dual_phase_beta: bool = False,
         progress_callback: Optional[Callable[[str, int], None]] = None,
     ) -> bytes | str:
         """비디오 생성"""
         # [Defense] 입력값 정화
         safe_prompt = self.sanitize_prompt_input(prompt)
+        self._validate_prompt_safety(safe_prompt)
         log_step("비디오 생성 요청", "시작", f"{duration_seconds}s, {resolution}")
 
         try:
-            result = self._client.generate_video(
-                prompt=safe_prompt,
-                duration_seconds=duration_seconds,
-                resolution=resolution,
-                progress_callback=progress_callback,
-            )
+            if mode == "dual":
+                if not enable_dual_phase_beta:
+                    raise VideoGenerationError(
+                        "Dual phase generation requires beta flag."
+                    )
+                if not phase2_prompt:
+                    raise VideoGenerationError(
+                        "Dual phase generation requires phase2_prompt."
+                    )
+
+                safe_phase2 = self.sanitize_prompt_input(phase2_prompt)
+                self._validate_prompt_safety(safe_phase2)
+
+                if hasattr(self._client, "generate_video_with_fallback"):
+                    result = self._client.generate_video_with_fallback(
+                        phase1_prompt=safe_prompt,
+                        phase2_prompt=safe_phase2,
+                        duration_seconds=duration_seconds,
+                        resolution=resolution,
+                        progress_callback=progress_callback,
+                    )
+                else:
+                    phase1_result = self._client.generate_video(
+                        prompt=safe_prompt,
+                        duration_seconds=duration_seconds,
+                        resolution=resolution,
+                        progress_callback=progress_callback,
+                    )
+                    try:
+                        result = self._client.generate_video(
+                            prompt=safe_phase2,
+                            duration_seconds=duration_seconds,
+                            resolution=resolution,
+                            progress_callback=progress_callback,
+                        )
+                    except Exception:
+                        result = phase1_result
+            else:
+                result = self._client.generate_video(
+                    prompt=safe_prompt,
+                    duration_seconds=duration_seconds,
+                    resolution=resolution,
+                    progress_callback=progress_callback,
+                )
 
             # [Defense] 출력 검증
             if not self.validate_video_output(result):
@@ -120,6 +183,7 @@ class VideoService:
         """이미지 기반 비디오 생성 (Image-to-Video)"""
         # [Defense] 입력값 정화
         safe_prompt = self.sanitize_prompt_input(prompt)
+        self._validate_prompt_safety(safe_prompt)
         log_step("I2V 생성 요청", "시작", f"{duration_seconds}s")
 
         try:
@@ -217,6 +281,9 @@ class VideoService:
         product: dict,
         strategy: dict,
         duration_seconds: int = 8,
+        mode: str = "single",
+        phase2_prompt: Optional[str] = None,
+        enable_dual_phase_beta: bool = False,
         progress_callback: Optional[Callable[[str, int], None]] = None,
     ) -> bytes | str:
         """마케팅 비디오 생성"""
@@ -241,6 +308,9 @@ class VideoService:
         return self.generate(
             prompt=prompt,
             duration_seconds=duration_seconds,
+            mode=mode,
+            phase2_prompt=phase2_prompt,
+            enable_dual_phase_beta=enable_dual_phase_beta,
             progress_callback=progress_callback,
         )
 

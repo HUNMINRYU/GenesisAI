@@ -1,5 +1,4 @@
 import os
-import shutil
 from datetime import datetime
 from pathlib import Path
 
@@ -12,17 +11,18 @@ from genesis_ai.core.models.pipeline import (
     PipelineResult,
 )
 from genesis_ai.services.history_service import HistoryService
+from genesis_ai.utils.file_store import safe_rmtree
 
 
 @pytest.fixture
 def temp_base_dir():
-    base_root = Path.cwd() / "outputs" / "pytest_tmp"
+    base_root = Path.cwd() / "tests" / "_tmp_history"
     base_root.mkdir(parents=True, exist_ok=True)
     temp_name = datetime.now().strftime("tmp_%Y%m%d_%H%M%S_%f")
     temp_dir = base_root / temp_name
     temp_dir.mkdir(parents=True, exist_ok=True)
     yield temp_dir
-    shutil.rmtree(temp_dir, ignore_errors=True)
+    safe_rmtree(temp_dir)
 
 def test_history_save_and_list(temp_base_dir):
     service = HistoryService(base_dir=temp_base_dir)

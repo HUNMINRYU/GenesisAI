@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -77,3 +78,34 @@ def save_metadata(payload: dict, base_dir: Optional[Path] = None) -> str:
 
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return str(path)
+
+
+def safe_unlink(path: Path, retries: int = 3, delay: float = 0.1) -> bool:
+    """Retry file unlink for Windows file locks."""
+    for attempt in range(retries):
+        try:
+            path.unlink()
+            return True
+        except PermissionError:
+            if attempt < retries - 1:
+                time.sleep(delay * (attempt + 1))
+            else:
+                raise
+    return False
+
+
+def safe_rmtree(path: Path, retries: int = 3, delay: float = 0.1) -> bool:
+    """Retry directory removal for Windows file locks."""
+    import shutil
+
+    for attempt in range(retries):
+        try:
+            shutil.rmtree(path)
+            return True
+        except PermissionError:
+            if attempt < retries - 1:
+                time.sleep(delay * (attempt + 1))
+            else:
+                shutil.rmtree(path, ignore_errors=True)
+                return False
+    return False

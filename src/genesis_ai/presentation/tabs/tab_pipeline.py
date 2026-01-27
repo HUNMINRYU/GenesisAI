@@ -1,9 +1,9 @@
-from datetime import datetime
+﻿from datetime import datetime
 
 import streamlit as st
 
 from genesis_ai.config.dependencies import get_services
-from genesis_ai.core.models import PipelineConfig
+from genesis_ai.core.models import GeneratedContent, PipelineConfig, PipelineResult
 from genesis_ai.presentation.components.log_viewer import render_inline_terminal
 from genesis_ai.presentation.state.session_manager import SessionManager
 from genesis_ai.presentation.utils.media import render_video
@@ -15,40 +15,45 @@ from genesis_ai.utils.logger import (
     log_user_action,
 )
 
-# 파이프라인 실행 로그 세션 키
+# ?뚯씠?꾨씪???ㅽ뻾 濡쒓렇 ?몄뀡 ??
 PIPELINE_LOG_KEY = "pipeline_execution_logs"
 
 
 def render_pipeline_tab() -> None:
-    """파이프라인 탭"""
-    st.markdown("### 🚀 자동화 파이프라인")
+    """Pipeline execution tab."""
+    st.markdown("### Pipeline Execution")
 
     product = SessionManager.get_selected_product()
     if not product:
-        st.warning("제품을 먼저 선택해주세요.")
+        st.warning("?쒗뭹??癒쇱? ?좏깮?댁＜?몄슂.")
         return
 
-    st.info(f"선택된 제품: **{getattr(product, 'name', 'N/A')}**")
+    st.info(f"?좏깮???쒗뭹: **{getattr(product, 'name', 'N/A')}**")
 
-    # 설정 UI
-    with st.expander("⚙️ 파이프라인 설정", expanded=True):
+    # ?ㅼ젙 UI
+    with st.expander("?숋툘 ?뚯씠?꾨씪???ㅼ젙", expanded=True):
         c1, c2 = st.columns(2)
         with c1:
-            youtube_count = st.slider("YouTube 검색 수", 1, 10, 3)
-            include_comments = st.checkbox("댓글 분석 포함", value=True)
+            youtube_count = st.slider("YouTube results", 1, 10, 3)
+            include_comments = st.checkbox("?볤? 遺꾩꽍 ?ы븿", value=True)
         with c2:
-            naver_count = st.slider("네이버 쇼핑 검색 수", 5, 30, 10)
-            generate_social = st.checkbox("SNS 포스팅 생성", value=True)
-            generate_video = st.checkbox("비디오 생성", value=True)
-            generate_thumbnails = st.checkbox("썸네일 3종 생성", value=True)
+            naver_count = st.slider("Naver news results", 5, 30, 10)
+            generate_social = st.checkbox("SNS ?ъ뒪???앹꽦", value=True)
+            generate_video = st.checkbox("鍮꾨뵒???앹꽦", value=True)
+            enable_dual_phase = st.checkbox(
+                "Dual Phase (beta)",
+                value=False,
+                help="8초 기본 영상 이후 2단계 연장 시도. 실패 시 1단계 결과로 폴백합니다.",
+            )
+            generate_thumbnails = st.checkbox("?몃꽕??3醫??앹꽦", value=True)
 
-    if st.button("🚀 파이프라인 실행", width="stretch", type="primary"):
-        # 전역 로그가 수집하므로 여기서는 별도 처리 불필요
-        # 단, 새로운 실행 시 로그를 구분하고 싶다면 전역 로그에 구분선 추가 가능
-        log_section("파이프라인 실행 시작")
+    if st.button("?? ?뚯씠?꾨씪???ㅽ뻾", width="stretch", type="primary"):
+        # ?꾩뿭 濡쒓렇媛 ?섏쭛?섎?濡??ш린?쒕뒗 蹂꾨룄 泥섎━ 遺덊븘??
+        # ?? ?덈줈???ㅽ뻾 ??濡쒓렇瑜?援щ텇?섍퀬 ?띕떎硫??꾩뿭 濡쒓렇??援щ텇??異붽? 媛??
+        log_section("?뚯씠?꾨씪???ㅽ뻾 ?쒖옉")
         log_user_action(
-            "파이프라인 실행 버튼 클릭",
-            f"제품={getattr(product, 'name', 'N/A')}, YT={youtube_count}, NV={naver_count}",
+            "?뚯씠?꾨씪???ㅽ뻾 踰꾪듉 ?대┃",
+            f"?쒗뭹={getattr(product, 'name', 'N/A')}, YT={youtube_count}, NV={naver_count}",
         )
 
         _execute_pipeline(
@@ -60,10 +65,11 @@ def render_pipeline_tab() -> None:
             include_comments=include_comments,
             generate_social=generate_social,
             generate_video=generate_video,
+            enable_dual_phase=enable_dual_phase,
             generate_thumbnails=generate_thumbnails,
         )
 
-    # 세션에 결과가 있으면 항상 표시 (st.rerun() 후에도 유지)
+    # ?몄뀡??寃곌낵媛 ?덉쑝硫???긽 ?쒖떆 (st.rerun() ?꾩뿉???좎?)
     elif SessionManager.get(SessionManager.PIPELINE_EXECUTED):
         _render_cached_results()
 
@@ -75,18 +81,20 @@ def _execute_pipeline(
     include_comments: bool,
     generate_social: bool,
     generate_video: bool,
+    enable_dual_phase: bool,
     generate_thumbnails: bool,
 ) -> None:
-    """파이프라인 실행 로직"""
-    # 터미널 로그 영역
-    st.markdown("#### 📟 실행 로그")
+    """?뚯씠?꾨씪???ㅽ뻾 濡쒖쭅"""
+    # ?곕???濡쒓렇 ?곸뿭
+    st.markdown("#### ?뱹 ?ㅽ뻾 濡쒓렇")
     log_placeholder = st.empty()
 
-    # 파이프라인 로그 초기화
+    # ?뚯씠?꾨씪??濡쒓렇 珥덇린??
     pipeline_logs: list[dict[str, str]] = []
     SessionManager.set(PIPELINE_LOG_KEY, pipeline_logs)
+    SessionManager.set(SessionManager.PIPELINE_ERROR_LOGS, [])
 
-    # 초기 터미널 렌더링
+    # 珥덇린 ?곕????뚮뜑留?
     render_inline_terminal(log_placeholder, pipeline_logs)
 
     try:
@@ -99,6 +107,7 @@ def _execute_pipeline(
             include_comments=include_comments,
             generate_social=generate_social,
             generate_video=generate_video,
+            video_dual_phase_beta=enable_dual_phase,
             generate_thumbnail=generate_thumbnails,
             generate_multi_thumbnails=generate_thumbnails,
             thumbnail_count=3 if generate_thumbnails else 1,
@@ -113,7 +122,7 @@ def _execute_pipeline(
         def progress_callback(progress):
             nonlocal pipeline_logs
 
-            # PipelineProgress 객체를 받아 처리
+            # PipelineProgress 媛앹껜瑜?諛쏆븘 泥섎━
             step_name = (
                 progress.current_step.name
                 if hasattr(progress.current_step, "name")
@@ -122,21 +131,21 @@ def _execute_pipeline(
 
             message = f"[{step_name}] {progress.message}"
 
-            # 터미널 로그에 추가
+            # ?곕???濡쒓렇??異붽?
             log_entry = {
-                "emoji": "📌",
+                "emoji": "?뱦",
                 "timestamp": datetime.now().strftime("%H:%M:%S"),
                 "level": "INFO",
                 "message": message,
-                "raw": f"📌 [{datetime.now().strftime('%H:%M:%S')}] INFO - {message}",
+                "raw": f"?뱦 [{datetime.now().strftime('%H:%M:%S')}] INFO - {message}",
             }
             pipeline_logs.append(log_entry)
             SessionManager.set(PIPELINE_LOG_KEY, pipeline_logs)
 
-            # 터미널 UI 즉시 업데이트
+            # ?곕???UI 利됱떆 ?낅뜲?댄듃
             render_inline_terminal(log_placeholder, pipeline_logs)
 
-            # 전역 로거에도 기록
+            # ?꾩뿭 濡쒓굅?먮룄 湲곕줉
             get_logger().info(f"[PROGRESS] {message}")
 
         result = pipeline_service.execute(
@@ -144,94 +153,116 @@ def _execute_pipeline(
         )
 
         if result.success:
-            # 완료 로그 추가
+            # ?꾨즺 濡쒓렇 異붽?
             pipeline_logs.append({
-                "emoji": "✅",
+                "emoji": "OK",
                 "timestamp": datetime.now().strftime("%H:%M:%S"),
                 "level": "INFO",
-                "message": "파이프라인 실행 완료!",
-                "raw": f"✅ [{datetime.now().strftime('%H:%M:%S')}] INFO - 완료!",
+                "message": "?뚯씠?꾨씪???ㅽ뻾 ?꾨즺!",
+                "raw": f"??[{datetime.now().strftime('%H:%M:%S')}] INFO - ?꾨즺!",
             })
             render_inline_terminal(log_placeholder, pipeline_logs)
 
-            st.success("모든 작업이 성공적으로 완료되었습니다!")
+            st.success("紐⑤뱺 ?묒뾽???깃났?곸쑝濡??꾨즺?섏뿀?듬땲??")
 
-            # 결과 저장
+            # 寃곌낵 ???
             SessionManager.set_pipeline_result(result)
 
-            # 저장 경로 로그 추가
+            # ???寃쎈줈 濡쒓렇 異붽?
             if hasattr(result, "executed_at"):
                 pipeline_logs.append({
-                    "emoji": "💾",
+                    "emoji": "?뮶",
                     "timestamp": datetime.now().strftime("%H:%M:%S"),
                     "level": "INFO",
-                    "message": "분석 결과가 영구 저장되었습니다. (리포트 탭에서 확인 가능)",
-                    "raw": f"💾 [{datetime.now().strftime('%H:%M:%S')}] INFO - 결과 저장 완료",
+                    "message": "遺꾩꽍 寃곌낵媛 ?곴뎄 ??λ릺?덉뒿?덈떎. (由ы룷????뿉???뺤씤 媛??",
+                    "raw": f"?뮶 [{datetime.now().strftime('%H:%M:%S')}] INFO - 寃곌낵 ????꾨즺",
                 })
                 render_inline_terminal(log_placeholder, pipeline_logs)
 
-            # 결과 렌더링
+            # 寃곌낵 ?뚮뜑留?
             try:
                 render_pipeline_results(result, show_balloons=True)
             except Exception as render_error:
                 import traceback
 
-                log_error(f"결과 렌더링 실패: {render_error}")
-                st.error("결과 렌더링 중 오류가 발생했습니다.")
+                log_error(f"寃곌낵 ?뚮뜑留??ㅽ뙣: {render_error}")
+                st.error("寃곌낵 ?뚮뜑留?以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.")
                 st.code(traceback.format_exc(), language="text")
 
         else:
-            # 실패 로그 추가
+            # ?ㅽ뙣 濡쒓렇 異붽?
             pipeline_logs.append({
-                "emoji": "❌",
+                "emoji": "ERR",
                 "timestamp": datetime.now().strftime("%H:%M:%S"),
                 "level": "ERROR",
-                "message": f"실행 실패: {result.error_message}",
-                "raw": f"❌ [{datetime.now().strftime('%H:%M:%S')}] ERROR - 실패",
+                "message": f"?ㅽ뻾 ?ㅽ뙣: {result.error_message}",
+                "raw": f"??[{datetime.now().strftime('%H:%M:%S')}] ERROR - ?ㅽ뙣",
             })
             render_inline_terminal(log_placeholder, pipeline_logs)
 
-            st.error(f"오류가 발생했습니다: {result.error_message}")
-            # 부분 결과가 있으면 저장/표시
+            st.error(f"?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎: {result.error_message}")
+            # 遺遺?寃곌낵媛 ?덉쑝硫?????쒖떆
             SessionManager.set_pipeline_result(result)
             if result.collected_data or result.strategy or result.generated_content:
-                st.warning("일부 단계만 완료되었습니다. 가능한 결과를 표시합니다.")
+                st.warning("?쇰? ?④퀎留??꾨즺?섏뿀?듬땲?? 媛?ν븳 寃곌낵瑜??쒖떆?⑸땲??")
                 render_pipeline_results(result)
 
     except Exception as e:
-        # 예외 로그 추가
+        # ?덉쇅 濡쒓렇 異붽?
         pipeline_logs.append({
-            "emoji": "🚨",
+            "emoji": "?슚",
             "timestamp": datetime.now().strftime("%H:%M:%S"),
             "level": "CRITICAL",
-            "message": f"치명적 오류: {e}",
-            "raw": f"🚨 [{datetime.now().strftime('%H:%M:%S')}] CRITICAL - {e}",
+            "message": f"移섎챸???ㅻ쪟: {e}",
+            "raw": f"?슚 [{datetime.now().strftime('%H:%M:%S')}] CRITICAL - {e}",
         })
         render_inline_terminal(log_placeholder, pipeline_logs)
 
-        log_error(f"파이프라인 실행 중 예외: {e}")
-        st.error(f"실행 중 오류 발생: {e}")
+        log_error(f"?뚯씠?꾨씪???ㅽ뻾 以??덉쇅: {e}")
+        st.error(f"?ㅽ뻾 以??ㅻ쪟 諛쒖깮: {e}")
+
+        error_result = PipelineResult(
+            success=False,
+            product_name=product.get("name", "N/A"),
+            config=SessionManager.get_pipeline_config(),
+            collected_data=None,
+            strategy=None,
+            generated_content=GeneratedContent(),
+            error_message=str(e),
+        )
+        SessionManager.set_pipeline_result(error_result)
+        SessionManager.set(SessionManager.PIPELINE_ERROR_LOGS, pipeline_logs)
 
 
 def _render_cached_results() -> None:
-    """세션에서 캐시된 결과 렌더링 (st.rerun 후에도 유지)"""
+    """?몄뀡?먯꽌 罹먯떆??寃곌낵 ?뚮뜑留?(st.rerun ?꾩뿉???좎?)"""
     result = SessionManager.get(SessionManager.PIPELINE_RESULT)
+    cached_logs = SessionManager.get(SessionManager.PIPELINE_ERROR_LOGS)
+    if cached_logs:
+        st.markdown("#### ?ㅽ뻾 濡쒓렇 (罹먯떆??)")
+        log_placeholder = st.empty()
+        render_inline_terminal(log_placeholder, cached_logs)
+
+    if result and not result.success:
+        st.error(f"?댁쟾 ?ㅽ뻾 ?ㅻ쪟: {result.error_message}")
+        return
+
     if result:
         render_pipeline_results(result, show_balloons=False)
         return
 
-    # Fallback: 개별 세션 변수 렌더링 (구버전 호환용)
+    # Fallback: 媛쒕퀎 ?몄뀡 蹂???뚮뜑留?(援щ쾭???명솚??
     import os
     import platform
     import subprocess
 
     st.divider()
-    st.markdown("### 🎁 생성 결과물")
+    st.markdown("### Generated Outputs")
 
     r_col1, r_col2 = st.columns(2)
 
     with r_col1:
-        st.markdown("#### 🖼️ 썸네일")
+        st.markdown("#### Thumbnail")
         multi_thumbnails = SessionManager.get(SessionManager.MULTI_THUMBNAILS)
         selected_index = st.session_state.get("pipeline_thumbnail_selected_index", 0)
 
@@ -246,14 +277,14 @@ def _render_cached_results() -> None:
                     if image_bytes:
                         st.image(image_bytes, caption=style_label)
                         if st.button(
-                            f"선택 {idx + 1}",
+                            f"?좏깮 {idx + 1}",
                             key=f"cached_thumb_select_{idx}",
                             width="stretch",
                         ):
                             st.session_state["pipeline_thumbnail_selected_index"] = idx
                             st.rerun()
 
-            # 선택된 썸네일 크게 표시
+            # ?좏깮???몃꽕???ш쾶 ?쒖떆
             selected_item = multi_thumbnails[
                 min(selected_index, len(multi_thumbnails) - 1)
             ]
@@ -262,7 +293,7 @@ def _render_cached_results() -> None:
             )
             if selected_bytes:
                 SessionManager.set(SessionManager.GENERATED_THUMBNAIL, selected_bytes)
-                st.markdown("##### 선택된 썸네일")
+                st.markdown("##### Selected Thumbnail")
                 st.image(
                     selected_bytes,
                     caption=selected_item.get("style_name", "Selected Thumbnail"),
@@ -273,17 +304,17 @@ def _render_cached_results() -> None:
                 caption="Generated Thumbnail",
             )
         else:
-            st.info("생성된 썸네일이 없습니다.")
+            st.info("?앹꽦???몃꽕?쇱씠 ?놁뒿?덈떎.")
 
     with r_col2:
-        st.markdown("#### 🎬 비디오")
+        st.markdown("#### Video")
         video_bytes = SessionManager.get(SessionManager.VIDEO_BYTES)
         video_url = SessionManager.get(SessionManager.GENERATED_VIDEO_URL)
 
         if video_bytes:
             render_video(video_bytes)
             if video_url:
-                st.caption(f"☁️ 버킷 저장: `{video_url}`")
+                st.caption(f"?곻툘 踰꾪궥 ??? `{video_url}`")
         elif video_url:
             if os.path.exists(video_url):
                 try:
@@ -291,9 +322,9 @@ def _render_cached_results() -> None:
                         vb = v_file.read()
                     render_video(vb)
                 except Exception as e:
-                    st.error(f"비디오 로드 실패: {e}")
-                st.caption(f"📍 저장 위치: `{video_url}`")
-                if st.button("📂 폴더 열기", key="cached_open_video_folder"):
+                    st.error(f"鍮꾨뵒??濡쒕뱶 ?ㅽ뙣: {e}")
+                st.caption(f"?뱧 ????꾩튂: `{video_url}`")
+                if st.button("?뱛 ?대뜑 ?닿린", key="cached_open_video_folder"):
                     folder_path = os.path.dirname(os.path.abspath(video_url))
                     if platform.system() == "Windows":
                         os.startfile(folder_path)
@@ -303,25 +334,25 @@ def _render_cached_results() -> None:
                         subprocess.Popen(["xdg-open", folder_path])
             else:
                 render_video(video_url)
-                st.markdown(f"[🔗 비디오 링크]({video_url})")
+                st.markdown(f"[?뵕 鍮꾨뵒??留곹겕]({video_url})")
         else:
-            st.info("생성된 비디오가 없습니다.")
+            st.info("?앹꽦??鍮꾨뵒?ㅺ? ?놁뒿?덈떎.")
 
 
 def render_pipeline_results(result, show_balloons: bool = False) -> None:
-    """파이프라인 실행 결과 렌더링"""
+    """Render pipeline execution results."""
     import os
     import platform
     import subprocess
 
-    # 썸네일/비디오 세션 저장 및 결과 표시
+    # ?몃꽕??鍮꾨뵒???몄뀡 ???諛?寃곌낵 ?쒖떆
     st.divider()
-    st.markdown("### 🎁 생성 결과물")
+    st.markdown("### Generated Outputs")
 
     r_col1, r_col2 = st.columns(2)
 
     with r_col1:
-        st.markdown("#### 🖼️ 썸네일")
+        st.markdown("#### Thumbnail")
         selected_index = st.session_state.get("pipeline_thumbnail_selected_index", 0)
 
         if result.generated_content.multi_thumbnails:
@@ -333,7 +364,7 @@ def render_pipeline_results(result, show_balloons: bool = False) -> None:
                     if image_bytes:
                         st.image(image_bytes, caption=style_label)
                         if st.button(
-                            f"선택 {idx + 1}",
+                            f"?좏깮 {idx + 1}",
                             key=f"thumb_select_{idx}",
                             width="stretch",
                         ):
@@ -361,25 +392,25 @@ def render_pipeline_results(result, show_balloons: bool = False) -> None:
             )
             if SessionManager.get(SessionManager.GENERATED_THUMBNAIL_URL):
                 st.caption(
-                    f"☁️ 버킷 저장: `{SessionManager.get(SessionManager.GENERATED_THUMBNAIL_URL)}`"
+                    f"?곻툘 踰꾪궥 ??? `{SessionManager.get(SessionManager.GENERATED_THUMBNAIL_URL)}`"
                 )
-            if st.button("💾 로컬로 저장 (썸네일)", key="save_thumb_local"):
+            if st.button("?뮶 濡쒖뺄濡????(?몃꽕??", key="save_thumb_local"):
                 path = save_thumbnail_bytes(result.generated_content.thumbnail_data)
                 SessionManager.set(SessionManager.GENERATED_THUMBNAIL_PATH, path)
-                st.caption(f"📍 저장 위치: `{path}`")
+                st.caption(f"?뱧 ????꾩튂: `{path}`")
                 st.download_button(
-                    "⬇️ 썸네일 다운로드",
+                    "燧뉛툘 ?몃꽕???ㅼ슫濡쒕뱶",
                     data=result.generated_content.thumbnail_data,
                     file_name=path.split("\\")[-1],
                     mime="image/png",
                 )
-            # 썸네일 경로 (메모리상의 데이터라 경로가 없을 수 있음, 저장 후 경로 표시 추천하지만 현재는 데이터만 있음)
-            # 만약 파일로 저장된 경로가 있다면 표시 (Result 객체 구조에 따라 다름)
+            # ?몃꽕??寃쎈줈 (硫붾え由ъ긽???곗씠?곕씪 寃쎈줈媛 ?놁쓣 ???덉쓬, ?????寃쎈줈 ?쒖떆 異붿쿇?섏?留??꾩옱???곗씠?곕쭔 ?덉쓬)
+            # 留뚯빟 ?뚯씪濡???λ맂 寃쎈줈媛 ?덈떎硫??쒖떆 (Result 媛앹껜 援ъ“???곕씪 ?ㅻ쫫)
         else:
-            st.info("생성된 썸네일이 없습니다.")
+            st.info("?앹꽦???몃꽕?쇱씠 ?놁뒿?덈떎.")
 
     with r_col2:
-        st.markdown("#### 🎬 비디오")
+        st.markdown("#### Video")
         video_url = result.generated_content.video_url
         video_bytes = result.generated_content.video_bytes
         if video_bytes:
@@ -390,14 +421,14 @@ def render_pipeline_results(result, show_balloons: bool = False) -> None:
             render_video(video_bytes)
             if SessionManager.get(SessionManager.GENERATED_VIDEO_URL):
                 st.caption(
-                    f"☁️ 버킷 저장: `{SessionManager.get(SessionManager.GENERATED_VIDEO_URL)}`"
+                    f"?곻툘 踰꾪궥 ??? `{SessionManager.get(SessionManager.GENERATED_VIDEO_URL)}`"
                 )
-            if st.button("💾 로컬로 저장 (비디오)", key="save_video_local"):
+            if st.button("?뮶 濡쒖뺄濡????(鍮꾨뵒??", key="save_video_local"):
                 path = save_video_bytes(video_bytes)
                 SessionManager.set(SessionManager.GENERATED_VIDEO_PATH, path)
-                st.caption(f"📍 저장 위치: `{path}`")
+                st.caption(f"?뱧 ????꾩튂: `{path}`")
                 st.download_button(
-                    "⬇️ 비디오 다운로드",
+                    "燧뉛툘 鍮꾨뵒???ㅼ슫濡쒕뱶",
                     data=video_bytes,
                     file_name=path.split("\\")[-1],
                     mime="video/mp4",
@@ -408,20 +439,20 @@ def render_pipeline_results(result, show_balloons: bool = False) -> None:
                 video_url,
             )
 
-            # 로컬 파일 처리
+            # 濡쒖뺄 ?뚯씪 泥섎━
             if os.path.exists(video_url):
-                # 1. 화면 표시 (바이트로 읽기)
+                # 1. ?붾㈃ ?쒖떆 (諛붿씠?몃줈 ?쎄린)
                 try:
                     with open(video_url, "rb") as v_file:
                         video_bytes = v_file.read()
                     render_video(video_bytes)
                 except Exception as e:
-                    st.error(f"비디오 로드 실패: {e}")
+                    st.error(f"鍮꾨뵒??濡쒕뱶 ?ㅽ뙣: {e}")
 
-                # 2. 경로 및 폴더 열기
-                st.caption(f"📍 저장 위치: `{video_url}`")
+                # 2. 寃쎈줈 諛??대뜑 ?닿린
+                st.caption(f"?뱧 ????꾩튂: `{video_url}`")
 
-                if st.button("📂 폴더 열기", key="open_video_folder"):
+                if st.button("?뱛 ?대뜑 ?닿린", key="open_video_folder"):
                     folder_path = os.path.dirname(os.path.abspath(video_url))
                     if platform.system() == "Windows":
                         os.startfile(folder_path)
@@ -430,27 +461,27 @@ def render_pipeline_results(result, show_balloons: bool = False) -> None:
                     else:  # Linux
                         subprocess.Popen(["xdg-open", folder_path])
             else:
-                # URL인 경우
+                # URL??寃쎌슦
                 render_video(video_url)
-                st.markdown(f"[🔗 비디오 링크]({video_url})")
+                st.markdown(f"[?뵕 鍮꾨뵒??留곹겕]({video_url})")
 
         else:
-            st.info("생성된 비디오가 없습니다.")
+            st.info("?앹꽦??鍮꾨뵒?ㅺ? ?놁뒿?덈떎.")
 
-    # 전략 요약 표시
+    # ?꾨왂 ?붿빟 ?쒖떆
     if result.strategy:
-        with st.expander("📊 마케팅 전략 요약", expanded=True):
-            st.write(result.strategy.get("summary", "요약 정보 없음"))
+        with st.expander("?뱤 留덉????꾨왂 ?붿빟", expanded=True):
+            st.write(result.strategy.get("summary", "?붿빟 ?뺣낫 ?놁쓬"))
 
-    # X-Algorithm 인사이트 섹션
+    # X-Algorithm ?몄궗?댄듃 ?뱀뀡
     if (
         result.collected_data
         and hasattr(result.collected_data, "top_insights")
         and result.collected_data.top_insights
     ):
         st.divider()
-        st.markdown("### 🧠 X-Algorithm 핵심 인사이트")
-        st.caption("AI 알고리즘이 분석한 유튜브 댓글 기반 고가치 잠재 고객의 페인포인트와 구매 의도")
+        st.markdown("### ?쭬 X-Algorithm ?듭떖 ?몄궗?댄듃")
+        st.caption("AI ?뚭퀬由ъ쬁??遺꾩꽍???좏뒠釉??볤? 湲곕컲 怨좉?移??좎옱 怨좉컼???섏씤?ъ씤?몄? 援щℓ ?섎룄")
 
         insights = result.collected_data.top_insights
         insight_cols = st.columns(len(insights))
@@ -471,9 +502,9 @@ def render_pipeline_results(result, show_balloons: bool = False) -> None:
                         </div>
                         <p style="font-size: 0.9em; font-weight: 500; min-height: 80px;">"{content}"</p>
                         <div style="font-size: 0.8em; color: #333;">
-                            <b>📌 Keywords:</b> {", ".join(features.get("keywords", [])[:3])}<br>
-                            <b>💰 Intent:</b> {features.get("purchase_intent", 0):.1f} |
-                            <b>💬 Viral:</b> {features.get("reply_inducing", 0):.1f}
+                            <b>?뱦 Keywords:</b> {", ".join(features.get("keywords", [])[:3])}<br>
+                            <b>?뮥 Intent:</b> {features.get("purchase_intent", 0):.1f} |
+                            <b>?뮠 Viral:</b> {features.get("reply_inducing", 0):.1f}
                         </div>
                     </div>
                     """,
