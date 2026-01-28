@@ -12,8 +12,11 @@ class FeatureHydrator:
     단순 댓글 텍스트 -> Rich Feature (구매의도, 바이럴 가능성 등) 변환
     """
 
+    MAX_CONCURRENT = 10
+
     def __init__(self, gemini_client: IMarketingAIService):
         self.gemini_client = gemini_client
+        self._semaphore = asyncio.Semaphore(self.MAX_CONCURRENT)
 
     async def hydrate(self, candidates: List[Candidate]) -> List[Candidate]:
         """
@@ -25,10 +28,14 @@ class FeatureHydrator:
 
         # 프롬프트 구성 (한 번에 여러 개 분석 가능하지만, 정밀도를 위해 개별 or 소량 배치)
         # 여기선 간단히 1:1로 구현하되, 추후 Batch 로직으로 고도화 가능
-        tasks = [self._analyze_single_comment(c) for c in candidates]
+        tasks = [self._analyze_with_semaphore(c) for c in candidates]
         results = await asyncio.gather(*tasks)
 
         return results
+
+    async def _analyze_with_semaphore(self, candidate: Candidate) -> Candidate:
+        async with self._semaphore:
+            return await self._analyze_single_comment(candidate)
 
     async def _analyze_single_comment(self, candidate: Candidate) -> Candidate:
         # Prompt Engineering for Feature Extraction

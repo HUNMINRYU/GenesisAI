@@ -2,6 +2,7 @@
 """
 Streamlit 세션 상태 관리자.
 """
+
 from typing import Any, Optional
 
 import streamlit as st
@@ -30,7 +31,7 @@ class SessionManager:
     MULTI_THUMBNAILS = "multi_thumbnails"
     PIPELINE_EXECUTED = "pipeline_executed"
     VIDEO_BYTES = "video_bytes"
-    PIPELINE_ERROR_LOGS = "pipeline_error_logs"
+    VIDEO_GENERATING = "video_generating"
 
     @classmethod
     def init_session_state(cls) -> None:
@@ -54,7 +55,7 @@ class SessionManager:
             cls.MULTI_THUMBNAILS: None,
             cls.PIPELINE_EXECUTED: False,
             cls.VIDEO_BYTES: None,
-            cls.PIPELINE_ERROR_LOGS: [],
+            cls.VIDEO_GENERATING: False,
         }
 
         for key, default_value in defaults.items():
@@ -89,11 +90,11 @@ class SessionManager:
             cls.NAVER_DATA,
             cls.MULTI_THUMBNAILS,
             cls.VIDEO_BYTES,
-            cls.PIPELINE_ERROR_LOGS,
+            cls.VIDEO_GENERATING,
         ]
         for key in keys_to_reset:
             if key in st.session_state:
-                st.session_state[key] = [] if key == cls.PIPELINE_ERROR_LOGS else None
+                st.session_state[key] = False if key == cls.VIDEO_GENERATING else None
 
         st.session_state[cls.PIPELINE_PROGRESS] = PipelineProgress()
         st.session_state[cls.PIPELINE_CONFIG] = PipelineConfig()
@@ -115,9 +116,9 @@ class SessionManager:
             cls.GENERATED_METADATA_PATH,
             cls.MULTI_THUMBNAILS,
             cls.VIDEO_BYTES,
-            cls.PIPELINE_ERROR_LOGS,
+            cls.VIDEO_GENERATING,
         ):
-            st.session_state[key] = [] if key == cls.PIPELINE_ERROR_LOGS else None
+            st.session_state[key] = False if key == cls.VIDEO_GENERATING else None
         st.session_state[cls.PIPELINE_PROGRESS] = PipelineProgress()
         st.session_state[cls.PIPELINE_EXECUTED] = False
 
