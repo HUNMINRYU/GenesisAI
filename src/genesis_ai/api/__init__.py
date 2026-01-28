@@ -1,5 +1,13 @@
 """
-제네시스코리아 API Utilities & Exports
+API Helpers 모듈
+
+이 모듈은 REST API가 아닌, 서비스 레이어에서 사용하는
+공통 유틸리티 함수를 제공합니다.
+
+주요 기능:
+- retry_with_backoff: API 호출 재시도 래퍼
+- validate_json_output: LLM 응답 JSON 검증
+- generate_hook_texts: 마케팅 훅 텍스트 생성
 """
 
 import json
