@@ -59,7 +59,16 @@ class _DummyVideoService:
     def __init__(self) -> None:
         self.calls = 0
 
-    def generate_marketing_video(self, product, strategy, duration_seconds, **kwargs):
+    def generate_marketing_video(
+        self,
+        product,
+        strategy,
+        duration_seconds,
+        mode="single",
+        phase2_prompt=None,
+        enable_dual_phase_beta=False,
+        progress_callback=None,
+    ):
         self.calls += 1
         return b"0000ftypvideo-bytes"
 
